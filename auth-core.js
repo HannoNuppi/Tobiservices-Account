@@ -8,8 +8,16 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, getDocs, collection, quer
 
 export const CONFIG = {
   // Aus der Firebase-Konsole: Projekteinstellungen > Deine Apps > Web-App
-  firebase: { apiKey: "AIzaSyCwVh8-JIm-pj8N8bOWgwz8-G_cLQ6AVuQ", authDomain: "tobiservices.firebaseapp.com", projectId: "tobiservices", appId: "1:552906640909:web:99f583a0f4145e96ee8f44" },
-  loginUrl: "https://hannonuppi.github.io/Tobiservices-Account/login.html",
+  firebase: {
+    apiKey: "AIzaSyCwVh8-JIm-pj8N8bOWgwz8-G_cLQ6AVuQ",
+    authDomain: "tobiservices.firebaseapp.com",
+    projectId: "tobiservices",
+    storageBucket: "tobiservices.firebasestorage.app",
+    messagingSenderId: "552906640909",
+    appId: "1:552906640909:web:99f583a0f4145e96ee8f44",
+    measurementId: "G-9LKPHE93S1",
+  },
+  loginUrl: "https://hannonuppi.github.io/accounts/login.html",
   allowedReturnHosts: ["hannonuppi.github.io"],   // Seiten, zu denen login.html zurückleiten darf
 };
 
