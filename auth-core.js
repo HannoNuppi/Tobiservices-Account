@@ -8,9 +8,9 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, getDocs, collection, quer
 
 export const CONFIG = {
   // Aus der Firebase-Konsole: Projekteinstellungen > Deine Apps > Web-App
-  firebase: { apiKey: "DEIN_API_KEY", authDomain: "DEIN-PROJEKT.firebaseapp.com", projectId: "DEIN-PROJEKT", appId: "DEINE_APP_ID" },
-  loginUrl: "https://DEINNAME.github.io/accounts/login.html",
-  allowedReturnHosts: ["DEINNAME.github.io"],   // Seiten, zu denen login.html zurückleiten darf
+  firebase: { apiKey: "AIzaSyCwVh8-JIm-pj8N8bOWgwz8-G_cLQ6AVuQ", authDomain: "tobiservices.firebaseapp.com", projectId: "tobiservices", appId: "1:552906640909:web:99f583a0f4145e96ee8f44" },
+  loginUrl: "https://hannonuppi.github.io/Tobiservices-Account/login.html",
+  allowedReturnHosts: ["hannonuppi.github.io"],   // Seiten, zu denen login.html zurückleiten darf
 };
 
 const app = initializeApp(CONFIG.firebase);
