@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    // Admin = Account mit dem Tag "admin". Tags können nur Admins ändern,
+    // Nutzer können sich den Tag also nicht selbst geben.
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && 'admin' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags;
+    }
+
+    // Grenzen für Mojo, das Websites vergeben (hier anpassen)
+    function maxAward() { return 100; }      // maximal +100 pro Schreibvorgang
+    function cooldown() { return duration.value(5, 's'); }
+
+    function validMojoChange() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return after.diff(before).affectedKeys().hasOnly(['mojo', 'mojoUpdatedAt'])
+        && after.mojoUpdatedAt == request.time
+        && after.mojo is int
+        && after.mojo >= 0
+        && after.mojo - before.mojo <= maxAward()
+        && request.time > before.mojoUpdatedAt + cooldown();
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'tags', 'mojo', 'createdAt', 'mojoUpdatedAt'])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 40
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.tags == []
+        && request.resource.data.mojo == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.mojoUpdatedAt == request.time;
+      allow update: if isAdmin() || (isOwner(uid) && validMojoChange());
+      allow delete: if isAdmin();
+    }
+
+    // Verlauf: nur zur Anzeige, wird vom Browser geschrieben (nicht manipulationssicher)
+    match /mojoLog/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'site', 'delta', 'reason', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.delta is int
+        && request.resource.data.site is string && request.resource.data.site.size() <= 80
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 100
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+  }
+}

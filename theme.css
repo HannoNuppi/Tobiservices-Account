@@ -1,0 +1,131 @@
+/* =====================================================================
+   NETZWERK-DESIGN-SYSTEM — Just-Dance-inspirierter Stil
+   Einbinden mit: <link rel="stylesheet" href="theme.css">
+   Schriften vorher laden (siehe template.html <head>).
+   ===================================================================== */
+
+:root{
+  /* Grundfarben — für eine Unterseite im selben Netzwerk kannst du diese
+     4 Akzentfarben anpassen, ohne den Rest des Systems zu verändern. */
+  --bg-a:#0a0c2a; --bg-b:#171154; --bg-c:#2a1264;
+  --pink:#ff3ea8; --cyan:#33f0e0; --gold:#ffcc4d; --violet:#8b3bff;
+
+  --card:rgba(255,255,255,0.055); --card-hi:rgba(255,255,255,0.1);
+  --line:rgba(255,255,255,0.14);
+  --text:#eef0ff; --muted:#9aa1cf;
+  --radius:18px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;min-height:100%;}
+
+/* Grundseite: Sternenhimmel + Farbverlauf-Hintergrund. Auf <body> setzen. */
+.jd-page{
+  font-family:'Inter',sans-serif; color:var(--text);
+  background:
+    radial-gradient(1200px 700px at 85% -10%, rgba(139,59,255,0.35), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(255,62,168,0.25), transparent 60%),
+    linear-gradient(160deg,var(--bg-a),var(--bg-b) 55%,var(--bg-c));
+  min-height:100vh; padding:24px 16px 60px; position:relative; overflow-x:hidden;
+}
+.jd-page::before{
+  content:""; position:fixed; inset:0; pointer-events:none; opacity:.5;
+  background-image:
+    radial-gradient(2px 2px at 10% 20%, #fff 100%, transparent),
+    radial-gradient(2px 2px at 80% 10%, #fff 100%, transparent),
+    radial-gradient(1.5px 1.5px at 60% 70%, #fff 100%, transparent),
+    radial-gradient(2px 2px at 30% 85%, #fff 100%, transparent),
+    radial-gradient(1.5px 1.5px at 92% 60%, #fff 100%, transparent);
+}
+.jd-wrap{max-width:900px; margin:0 auto; position:relative; z-index:1;}
+
+/* Kopfzeile */
+.jd-topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-wrap:wrap; gap:10px;}
+
+/* Logo-Wortmarke im Spiel-Stil. Text über die zwei <span> in .jd-logo-main ändern. */
+.jd-logo{display:flex; flex-direction:column; line-height:.82; transform:skewY(-2deg); flex-shrink:0;}
+.jd-logo-tag{
+  font-family:'Baloo 2'; font-weight:700; font-size:9px; letter-spacing:.5px; align-self:flex-start;
+  background:linear-gradient(90deg,var(--gold),var(--pink)); color:#2a1264; padding:2px 9px;
+  border-radius:6px 6px 0 0; margin-bottom:-2px; transform:skewX(-8deg); text-transform:uppercase;
+}
+.jd-logo-main{display:flex; flex-direction:column;}
+.jd-logo-main span{
+  font-family:'Baloo 2'; font-weight:800; font-size:21px; letter-spacing:.5px; transform:skewX(-8deg);
+  background:linear-gradient(160deg,var(--gold),var(--pink) 45%,var(--violet) 80%,var(--cyan));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  -webkit-text-stroke:1.4px rgba(255,255,255,0.9);
+  filter:drop-shadow(0 0 8px rgba(255,62,168,.45));
+}
+.jd-logo-main .l2{margin-top:-7px;}
+
+/* Buttons */
+.jd-btn{
+  font-family:'Baloo 2'; font-weight:700; font-size:13px; color:#0a0c2a; cursor:pointer;
+  background:linear-gradient(90deg,var(--gold),var(--pink)); border:none; border-radius:999px;
+  padding:10px 20px; box-shadow:0 0 14px rgba(255,204,77,.4);
+}
+.jd-btn:hover{filter:brightness(1.08);}
+.jd-btn-ghost{
+  font-family:'Baloo 2'; font-weight:700; font-size:13px; color:var(--text); cursor:pointer;
+  background:rgba(255,255,255,0.06); border:1px solid var(--line); border-radius:999px; padding:10px 20px;
+}
+.jd-btn-ghost:hover{background:rgba(255,255,255,0.14);}
+.jd-btn:disabled, .jd-btn-ghost:disabled{opacity:.5; cursor:default;}
+
+/* Pill-Badge (z.B. Status, Kategorie, Woche A/B) */
+.jd-pill{
+  font-family:'Baloo 2'; font-weight:700; font-size:12px; padding:6px 14px; border-radius:999px;
+  background:linear-gradient(90deg,var(--violet),var(--pink)); box-shadow:0 0 12px rgba(139,59,255,.5);
+  white-space:nowrap; display:inline-block; color:#fff;
+}
+
+/* Glossy Karte mit Diagonal-Sheen */
+.jd-card{
+  position:relative; border-radius:var(--radius); overflow:hidden; padding:18px;
+  background:var(--card); border:1px solid var(--line); transition:background .15s ease;
+}
+.jd-card::before{
+  content:""; position:absolute; inset:0; opacity:.5; pointer-events:none;
+  background:linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.10) 45%, transparent 60%);
+}
+.jd-card.jd-clickable{cursor:pointer;}
+.jd-card.jd-clickable:hover{background:var(--card-hi);}
+.jd-card h3{font-family:'Baloo 2'; font-weight:700; font-size:16px; margin:0 0 6px; position:relative; z-index:1;}
+.jd-card p{margin:0; font-size:13px; color:var(--muted); position:relative; z-index:1;}
+
+/* Hinweis-Banner */
+.jd-banner{
+  background:rgba(255,204,77,0.12); border:1px solid rgba(255,204,77,0.4); border-radius:14px;
+  padding:12px 16px; font-size:13px; line-height:1.5; margin-bottom:14px;
+}
+.jd-banner b{color:var(--gold);}
+
+/* Formularfelder */
+.jd-input, .jd-textarea{
+  width:100%; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,0.06);
+  color:var(--text); padding:9px 11px; font-family:'Inter'; font-size:14px; resize:vertical;
+}
+.jd-textarea{min-height:70px;}
+
+/* Modal (per theme.js gesteuert) */
+.jd-overlay{
+  position:fixed; inset:0; background:rgba(5,6,20,0.72); backdrop-filter:blur(3px);
+  display:none; align-items:center; justify-content:center; z-index:50; padding:16px;
+}
+.jd-overlay.show{display:flex;}
+.jd-modal{
+  width:100%; max-width:420px; max-height:85vh; overflow-y:auto; border-radius:20px;
+  background:linear-gradient(160deg,var(--bg-b),var(--bg-c)); border:1px solid var(--line);
+  padding:20px; box-shadow:0 0 40px rgba(139,59,255,.35);
+}
+.jd-modal-close{float:right; background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; line-height:1;}
+
+/* Toast (per theme.js gesteuert) */
+.jd-toast{
+  position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px);
+  background:linear-gradient(90deg,var(--violet),var(--pink)); color:#fff; font-family:'Baloo 2';
+  font-weight:700; font-size:13px; padding:12px 20px; border-radius:999px; opacity:0;
+  transition:opacity .25s, transform .25s; box-shadow:0 0 22px rgba(255,62,168,.5); z-index:60;
+  pointer-events:none; text-align:center; max-width:80vw;
+}
+.jd-toast.show{opacity:1; transform:translateX(-50%) translateY(0);}

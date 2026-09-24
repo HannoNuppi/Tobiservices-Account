@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin-Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme.css">
+<style>
+  #list{display:grid; gap:12px; margin-top:14px;}
+  .row{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; position:relative; z-index:1;}
+  .row .jd-input{width:auto; flex:1 1 130px;}
+  .row .mojo{flex:0 1 110px;}
+  .jd-pill a{cursor:pointer; margin-left:6px; opacity:.8;}
+</style>
+</head>
+<body class="jd-page">
+<div class="jd-wrap">
+  <div class="jd-topbar">
+    <div class="jd-logo"><span class="jd-logo-tag">Netzwerk</span>
+      <div class="jd-logo-main"><span>ADMIN</span><span class="l2">PANEL</span></div></div>
+    <span class="jd-pill" id="count">Lädt …</span>
+  </div>
+  <div id="app">
+    <input class="jd-input" id="q" placeholder="Nach Name oder E-Mail suchen" style="margin-top:16px">
+    <div id="list"></div>
+  </div>
+  <datalist id="tags"></datalist>
+</div>
+<script src="theme.js"></script>
+<script type="module">
+import { auth, onUser, isAdmin, listUsers, setTags, setMojo, cleanTag, requireLogin } from "./auth-core.js";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let users = [];
+
+onUser(async (u) => {
+  if (!u) return requireLogin();
+  if (!(await isAdmin())) {
+    $("#app").innerHTML = '<div class="jd-banner" style="margin-top:16px"><b>Kein Zugriff.</b> Dieses Konto ist kein Admin.</div>';
+    $("#count").remove(); return;
+  }
+  users = await listUsers(); render();
+});
+
+function render() {
+  const q = $("#q").value.toLowerCase();
+  const shown = users.filter((u) => ((u.displayName || "") + (u.email || "")).toLowerCase().includes(q));
+  $("#count").textContent = users.length + " Accounts";
+  $("#tags").innerHTML = [...new Set(users.flatMap((u) => u.tags || []))].map((t) => `<option value="${esc(t)}">`).join("");
+  $("#list").innerHTML = shown.map((u) => `
+    <div class="jd-card" data-uid="${esc(u.uid)}">
+      <h3>${esc(u.displayName)}</h3><p>${esc(u.email)}</p>
+      <div class="row">${(u.tags || []).map((t) => `<span class="jd-pill">${esc(t)}<a data-rm="${esc(t)}">×</a></span>`).join("") || "<span style='color:var(--muted);font-size:13px'>Noch keine Tags</span>"}</div>
+      <div class="row">
+        <input class="jd-input tag" list="tags" placeholder="Neuer Tag" maxlength="24">
+        <button class="jd-btn-ghost" data-add>Tag hinzufügen</button>
+      </div>
+      <div class="row">
+        <input class="jd-input mojo" type="number" min="0" step="1" value="${u.mojo | 0}" aria-label="Mojo">
+        <button class="jd-btn" data-save>Mojo speichern</button>
+      </div>
+    </div>`).join("") || "<p>Keine Accounts gefunden.</p>";
+}
+
+$("#q").oninput = render;
+$("#list").addEventListener("click", async (e) => {
+  const card = e.target.closest("[data-uid]"); if (!card) return;
+  const u = users.find((x) => x.uid === card.dataset.uid), t = e.target;
+  try {
+    if (t.dataset.rm) {
+      if (t.dataset.rm === "admin" && u.uid === auth.currentUser.uid) return jdToast("Du kannst dir den Admin-Tag nicht selbst entfernen.");
+      u.tags = u.tags.filter((x) => x !== t.dataset.rm); await setTags(u.uid, u.tags);
+    }
+    else if (t.hasAttribute("data-add")) {
+      const tag = cleanTag(card.querySelector(".tag").value);
+      if (!tag) return;
+      if (!(u.tags || []).includes(tag)) { u.tags = [...(u.tags || []), tag]; await setTags(u.uid, u.tags); }
+    }
+    else if (t.hasAttribute("data-save")) {
+      u.mojo = Math.max(0, parseInt(card.querySelector(".mojo").value, 10) || 0); await setMojo(u.uid, u.mojo);
+    }
+    else return;
+    jdToast("Gespeichert"); render();
+  } catch (err) {
+    jdToast("Speichern fehlgeschlagen: " + err.code);
+    users = await listUsers(); render();
+  }
+});
+</script>
+</body>
+</html>
