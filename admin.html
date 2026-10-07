@@ -4,160 +4,456 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>TobiServices – Admin</title>
+<title>TobiServices – Admin Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="theme.css">
+<style>
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
+  .stat{padding:16px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+  .stat b{display:block;font:800 25px 'Baloo 2';margin-bottom:2px}
+  .stat span{font-size:12px;color:var(--muted)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px}
+  .toolbar .jd-input{flex:1 1 220px}
+  .toolbar select{width:auto;min-width:170px}
+  .user-list{display:grid;gap:12px;margin-top:14px}
+  .user-head{display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+  .chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.07);border:1px solid var(--line);font-size:11px}
+  .chip button{border:0;background:none;color:inherit;cursor:pointer;font:inherit;padding:0}
+  .bulk{display:none;padding:12px 14px;margin-top:12px;border-radius:14px;background:rgba(51,240,224,.08);border:1px solid rgba(51,240,224,.25)}
+  .bulk.show{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .monitor-list{display:grid;gap:8px;margin-top:12px}
+  .hwrow{padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.16)}
+  .hwmeta{font-size:11px;color:var(--muted);margin-bottom:4px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px}
+  .check{width:18px;height:18px;accent-color:var(--cyan)}
+</style>
 </head>
 <body class="jd-page">
 <div class="jd-wrap">
   <div class="jd-topbar">
-    <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span>
+    <div class="jd-logo">
+      <span class="jd-logo-tag">TobiServices</span>
       <div class="jd-logo-main"><span>ADMIN</span><span class="l2">CENTER</span></div>
     </div>
-    <span class="jd-pill" id="count">Lädt …</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="jd-btn-ghost" id="accountBtn" type="button">Account</button>
+      <span class="jd-pill" id="status">Prüfe Zugriff …</span>
+    </div>
   </div>
 
   <div id="app" style="margin-top:16px"></div>
+
+  <section class="jd-card" style="margin-top:14px">
+    <h3>JDNEXT Monitor</h3>
+    <p>Überwacht die öffentlich lesbaren Hausaufgaben des alten <span class="mono">next-untis-plus</span>-Projekts, ohne dessen Datenbankrechte für Admins künstlich zu öffnen.</p>
+    <div class="grid">
+      <div class="stat"><b id="hwCount">–</b><span>Einträge diese Woche</span></div>
+      <div class="stat"><b id="hwSlots">–</b><span>belegte Stunden</span></div>
+      <div class="stat"><b id="hwPeople">–</b><span>verschiedene Anzeigenamen</span></div>
+    </div>
+    <div class="toolbar">
+      <input class="jd-input" id="hwSearch" maxlength="100" placeholder="Hausaufgaben durchsuchen">
+      <button class="jd-btn-ghost" id="refreshHw" type="button">Aktualisieren</button>
+      <button class="jd-btn" id="openUntis" type="button">JDNEXT öffnen</button>
+    </div>
+    <div id="monitorList" class="monitor-list"><p style="color:var(--muted)">Wird geladen …</p></div>
+  </section>
 </div>
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth, onUser, isAdmin, listUsers, setTags, requireLogin } from "./auth-core.js";
+import {
+  auth,
+  onUser,
+  isAdmin,
+  listUsers,
+  setTags,
+  requireLogin,
+  CONFIG
+} from "./auth-core.js";
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = s => document.querySelector(s);
-let users = [];
+const OLD_CONFIG = Object.freeze({
+  apiKey: "AIzaSyBgkWUtFIH63yJUw4zTbNtplKL5HqDDXMg",
+  authDomain: "next-untis-plus.firebaseapp.com",
+  projectId: "next-untis-plus",
+  storageBucket: "next-untis-plus.firebasestorage.app",
+  messagingSenderId: "276114359651",
+  appId: "1:276114359651:web:c357fa4cc4f395bf55bf56"
+});
+const untisApp = initializeApp(OLD_CONFIG, "JDNEXT-AdminMonitor");
+const untisDb = getFirestore(untisApp);
 
-onUser(async (user, profile) => {
-  if (!user || !user.emailVerified) return requireLogin();
-  if (!isAdmin(profile)) {
-    $("#app").innerHTML =
-      '<div class="jd-banner"><b>Kein Zugriff.</b> Dieses Konto besitzt nicht den Admin-Tag.</div>';
-    $("#count").remove();
+let users = [];
+let selected = new Set();
+let allHomework = [];
+
+const DAY_NAMES = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"];
+const JDNEXT_URL = "https://hannonuppi.github.io/JDNEXT_UNTIS/";
+const PERIODS = 6;
+
+function mondayOf(date){
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  const diff=(d.getDay()+6)%7;
+  d.setDate(d.getDate()-diff);
+  return d;
+}
+function addDays(date,n){
+  const d=new Date(date);
+  d.setDate(d.getDate()+n);
+  return d;
+}
+function isoDate(d){
+  return d.toISOString().slice(0,10);
+}
+function escapeHtml(value){
+  return String(value ?? "").replace(/[&<>"']/g,c=>(
+    {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]
+  ));
+}
+
+onUser(async (user,profile)=>{
+  if(!user || !user.emailVerified){
+    return requireLogin(location.href);
+  }
+  if(!isAdmin(profile)){
+    $("#status").textContent="Kein Zugriff";
+    $("#app").innerHTML='<div class="jd-banner"><b>Kein Zugriff.</b> Dieses Konto besitzt keinen <span class="mono">admin</span>-Tag.</div>';
     return;
   }
 
-  try {
-    users = await listUsers();
-    render();
-  } catch (error) {
+  $("#status").textContent="Admin bestätigt";
+  $("#accountBtn").onclick=()=>location.href=CONFIG.accountUrl;
+
+  try{
+    users=await listUsers();
+    renderUsers();
+    await loadHomeworkMonitor();
+  }catch(error){
     console.error(error);
-    $("#app").innerHTML =
-      '<div class="jd-banner"><b>Fehler.</b> Die Accounts konnten nicht geladen werden.</div>';
-    $("#count").remove();
+    $("#app").innerHTML='<div class="jd-banner"><b>Fehler.</b> Die Admin-Daten konnten nicht geladen werden.</div>';
   }
 });
 
-function render() {
-  const query = $("#q")?.value.trim().toLowerCase() || "";
-  const shown = users.filter(u =>
-    ((u.displayName || "") + " " + (u.email || "")).toLowerCase().includes(query)
-  );
+function renderDashboard(){
+  const admins=users.filter(u=>Array.isArray(u.tags)&&u.tags.includes("admin")).length;
+  const tagged=users.filter(u=>Array.isArray(u.tags)&&u.tags.length>0).length;
 
-  $("#count").textContent = users.length + " Accounts";
+  $("#app").innerHTML=`
+    <div class="grid" style="margin-top:0">
+      <div class="stat"><b>${users.length}</b><span>Accounts</span></div>
+      <div class="stat"><b>${admins}</b><span>Admins</span></div>
+      <div class="stat"><b>${tagged}</b><span>Accounts mit Tags</span></div>
+      <div class="stat"><b>${users.length-admins}</b><span>keine Admins</span></div>
+    </div>
 
-  $("#list").innerHTML = shown.map(u => {
-    const tags = Array.isArray(u.tags) ? u.tags : [];
-    return `
-      <div class="jd-card" data-uid="${escapeHtml(u.uid)}">
-        <h3 class="username"></h3>
-        <p class="email"></p>
+    <div class="toolbar">
+      <input class="jd-input" id="q" maxlength="100" placeholder="Name oder E-Mail suchen" autocomplete="off">
+      <select class="jd-input" id="tagFilter">
+        <option value="">Alle Tags</option>
+      </select>
+      <button class="jd-btn-ghost" id="refreshUsers" type="button">Accounts aktualisieren</button>
+      <button class="jd-btn-ghost" id="exportCsv" type="button">CSV exportieren</button>
+    </div>
 
-        <div style="margin-top:12px;font-size:12px;color:var(--muted)">Tags</div>
-        <div class="tagbox" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:7px"></div>
+    <div class="bulk" id="bulkBar">
+      <span id="selectedCount">0 ausgewählt</span>
+      <input class="jd-input" id="bulkTag" maxlength="24" placeholder="Tag">
+      <button class="jd-btn-ghost" id="bulkAdd" type="button">Tag hinzufügen</button>
+      <button class="jd-btn-ghost" id="bulkRemove" type="button">Tag entfernen</button>
+      <button class="jd-btn-ghost" id="clearSelection" type="button">Auswahl löschen</button>
+    </div>
 
-        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-          <input class="jd-input tag" maxlength="24" placeholder="Neuer Tag">
-          <button class="jd-btn-ghost" type="button" data-add>Tag hinzufügen</button>
-        </div>
-      </div>`;
-  }).join("") || "<p>Keine Accounts gefunden.</p>";
+    <div id="userList" class="user-list"></div>`;
 
-  shown.forEach(u => {
-    const card = document.querySelector(`[data-uid="${CSS.escape(u.uid)}"]`);
-    if (!card) return;
+  populateTagFilter();
+  $("#q").oninput=renderUsers;
+  $("#tagFilter").onchange=renderUsers;
+  $("#refreshUsers").onclick=refreshUsers;
+  $("#exportCsv").onclick=exportCsv;
+  $("#bulkAdd").onclick=()=>bulkChange(true);
+  $("#bulkRemove").onclick=()=>bulkChange(false);
+  $("#clearSelection").onclick=()=>{
+    selected.clear();
+    renderUsers();
+  };
+}
 
-    card.querySelector(".username").textContent = u.displayName || "(ohne Namen)";
-    card.querySelector(".email").textContent = u.email || "";
-
-    const tagbox = card.querySelector(".tagbox");
-    (Array.isArray(u.tags) ? u.tags : []).forEach(tag => {
-      const pill = document.createElement("span");
-      pill.className = "jd-pill";
-      pill.textContent = tag;
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.textContent = "×";
-      remove.setAttribute("data-rm", tag);
-      remove.style.cssText = "margin-left:6px;border:0;background:none;color:inherit;cursor:pointer;font:inherit;";
-      pill.appendChild(remove);
-      tagbox.appendChild(pill);
-    });
+function populateTagFilter(){
+  const filter=$("#tagFilter");
+  if(!filter) return;
+  const tags=[...new Set(users.flatMap(u=>Array.isArray(u.tags)?u.tags:[]))].sort();
+  filter.innerHTML='<option value="">Alle Tags</option>';
+  tags.forEach(tag=>{
+    const option=document.createElement("option");
+    option.value=tag;
+    option.textContent=tag;
+    filter.appendChild(option);
   });
 }
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, c =>
-    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]
-  );
+function renderUsers(){
+  if(!$("#userList")){
+    renderDashboard();
+    return;
+  }
+
+  populateTagFilter();
+
+  const q=($("#q")?.value||"").trim().toLowerCase();
+  const tag=($("#tagFilter")?.value||"").trim();
+
+  const shown=users.filter(u=>{
+    const text=((u.displayName||"")+" "+(u.email||"")).toLowerCase();
+    const tags=Array.isArray(u.tags)?u.tags:[];
+    return (!q||text.includes(q)) && (!tag||tags.includes(tag));
+  });
+
+  $("#userList").innerHTML=shown.map(u=>{
+    const tags=Array.isArray(u.tags)?u.tags:[];
+    const checked=selected.has(u.uid);
+
+    return `
+      <div class="jd-card" data-uid="${escapeHtml(u.uid)}">
+        <div class="user-head">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <input class="check" type="checkbox" ${checked?"checked":""} aria-label="Account auswählen">
+            <div>
+              <h3 class="username"></h3>
+              <p class="email"></p>
+              <div class="mono" style="margin-top:6px;opacity:.65">${escapeHtml(u.uid)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chips"></div>
+
+        <div class="actions">
+          <input class="jd-input tagInput" maxlength="24" placeholder="Tag hinzufügen">
+          <button class="jd-btn-ghost" type="button" data-add>Hinzufügen</button>
+          <button class="jd-btn-ghost" type="button" data-copy>UID kopieren</button>
+        </div>
+      </div>`;
+  }).join("") || "<p style='color:var(--muted)'>Keine Accounts gefunden.</p>";
+
+  shown.forEach(u=>{
+    const card=document.querySelector(`[data-uid="${CSS.escape(u.uid)}"]`);
+    if(!card) return;
+
+    card.querySelector(".username").textContent=u.displayName||"(ohne Namen)";
+    card.querySelector(".email").textContent=u.email||"";
+
+    const chips=card.querySelector(".chips");
+    (Array.isArray(u.tags)?u.tags:[]).forEach(tag=>{
+      const chip=document.createElement("span");
+      chip.className="chip";
+      chip.textContent=tag;
+
+      const remove=document.createElement("button");
+      remove.type="button";
+      remove.textContent="×";
+      remove.dataset.rm=tag;
+      remove.title="Tag entfernen";
+      chip.appendChild(remove);
+      chips.appendChild(chip);
+    });
+  });
+
+  $("#selectedCount").textContent=selected.size+" ausgewählt";
+  $("#bulkBar").classList.toggle("show",selected.size>0);
+  $(".jd-page").scrollTop;
 }
 
-document.getElementById("app").insertAdjacentHTML("afterbegin", `
-  <input class="jd-input" id="q" maxlength="100"
-         placeholder="Nach Name oder E-Mail suchen" autocomplete="off">
-  <div id="list" style="display:grid;gap:12px;margin-top:14px"></div>
-`);
+$("#app").addEventListener("click",async event=>{
+  const card=event.target.closest("[data-uid]");
+  if(!card) return;
+  const user=users.find(u=>u.uid===card.dataset.uid);
+  if(!user) return;
 
-$("#q").oninput = render;
+  const check=event.target.closest("input[type=checkbox]");
+  if(check){
+    if(check.checked) selected.add(user.uid);
+    else selected.delete(user.uid);
+    renderUsers();
+    return;
+  }
 
-document.getElementById("list").addEventListener("click", async event => {
-  const card = event.target.closest("[data-uid]");
-  if (!card) return;
+  const button=event.target.closest("[data-rm],[data-add],[data-copy]");
+  if(!button) return;
 
-  const user = users.find(u => u.uid === card.dataset.uid);
-  if (!user) return;
+  try{
+    const tags=Array.isArray(user.tags)?[...user.tags]:[];
 
-  const button = event.target.closest("[data-rm],[data-add]");
-  if (!button) return;
-
-  try {
-    let tags = Array.isArray(user.tags) ? [...user.tags] : [];
-
-    if (button.dataset.rm) {
-      const tag = button.dataset.rm;
-
-      if (
-        tag === "admin" &&
-        user.uid === auth.currentUser.uid
-      ) {
-        return jdToast("Den eigenen Admin-Tag kannst du hier nicht entfernen.");
-      }
-
-      tags = tags.filter(t => t !== tag);
-    } else {
-      const input = card.querySelector(".tag");
-      const tag = String(input.value || "")
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9äöüß_-]+/g, "-")
-        .slice(0, 24);
-
-      if (!tag) return jdToast("Bitte einen gültigen Tag eingeben.");
-      if (tags.includes(tag)) return jdToast("Diesen Tag hat der Account bereits.");
-      if (tags.length >= 20) return jdToast("Maximal 20 Tags pro Account.");
-      tags.push(tag);
+    if(button.dataset.copy){
+      await navigator.clipboard.writeText(user.uid);
+      return jdToast("UID kopiert");
     }
 
-    await setTags(user.uid, tags);
-    user.tags = tags;
-    render();
-    jdToast("Tag gespeichert");
-  } catch (error) {
+    if(button.dataset.rm){
+      const tag=button.dataset.rm;
+      if(tag==="admin" && user.uid===auth.currentUser.uid){
+        return jdToast("Den eigenen Admin-Tag kannst du hier nicht entfernen.");
+      }
+      user.tags=tags.filter(t=>t!==tag);
+    }else{
+      const tag=button.closest(".jd-card").querySelector(".tagInput").value
+        .toLowerCase().trim().replace(/[^a-z0-9äöüß_-]+/g,"-").slice(0,24);
+
+      if(!tag) return jdToast("Bitte einen gültigen Tag eingeben.");
+      if(tags.includes(tag)) return jdToast("Tag bereits vorhanden.");
+      if(tags.length>=20) return jdToast("Maximal 20 Tags.");
+      user.tags=[...tags,tag];
+    }
+
+    await setTags(user.uid,user.tags);
+    renderUsers();
+    jdToast("Gespeichert");
+  }catch(error){
     console.error(error);
-    jdToast("Änderung wurde von den Sicherheitsregeln abgelehnt.");
+    jdToast("Änderung von Firebase abgelehnt.");
+    await refreshUsers();
   }
 });
+
+async function bulkChange(add){
+  const tag=$("#bulkTag").value.toLowerCase().trim().replace(/[^a-z0-9äöüß_-]+/g,"-").slice(0,24);
+  if(!tag) return jdToast("Bitte einen Tag eingeben.");
+  if(!selected.size) return;
+
+  let changed=0;
+
+  for(const user of users){
+    if(!selected.has(user.uid)) continue;
+
+    const tags=Array.isArray(user.tags)?[...user.tags]:[];
+
+    if(add){
+      if(tags.includes(tag)||tags.length>=20) continue;
+      tags.push(tag);
+    }else{
+      if(tag==="admin" && user.uid===auth.currentUser.uid) continue;
+      if(!tags.includes(tag)) continue;
+      tags.splice(tags.indexOf(tag),1);
+    }
+
+    try{
+      await setTags(user.uid,tags);
+      user.tags=tags;
+      changed++;
+    }catch(error){
+      console.warn("Bulk-Änderung abgelehnt:",user.uid,error);
+    }
+  }
+
+  selected.clear();
+  $("#bulkTag").value="";
+  renderUsers();
+  jdToast(changed+" Accounts geändert");
+}
+
+async function refreshUsers(){
+  try{
+    users=await listUsers();
+    selected.clear();
+    renderUsers();
+    jdToast("Accounts aktualisiert");
+  }catch(error){
+    console.error(error);
+    jdToast("Aktualisierung fehlgeschlagen");
+  }
+}
+
+function exportCsv(){
+  const rows=[
+    ["UID","Anzeigename","E-Mail","Tags"],
+    ...users.map(u=>[
+      u.uid,
+      u.displayName||"",
+      u.email||"",
+      Array.isArray(u.tags)?u.tags.join("|"):""
+    ])
+  ];
+
+  const csv=rows.map(row=>row.map(value=>{
+    const s=String(value).replace(/"/g,'""');
+    return '"' + s + '"';
+  }).join(",")).join("\r\n");
+
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="tobiservices-accounts.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadHomeworkMonitor(){
+  const now=new Date();
+  const monday=mondayOf(now);
+  const keys=[];
+
+  for(let d=0;d<5;d++){
+    for(let p=0;p<PERIODS;p++){
+      keys.push(`${isoDate(addDays(monday,d))}_${p}`);
+    }
+  }
+
+  const snapshots=[];
+  for(const key of keys){
+    try{
+      const snap=await getDocs(collection(untisDb,"homework",key,"entries"));
+      snap.forEach(d=>{
+        const data=d.data()||{};
+        snapshots.push({
+          key,
+          id:d.id,
+          text:typeof data.text==="string"?data.text:"",
+          author:typeof data.author==="string"?data.author:"",
+          authorUid:typeof data.authorUid==="string"?data.authorUid:""
+        });
+      });
+    }catch(error){
+      console.warn("JDNEXT-Monitor konnte",key,"nicht laden:",error);
+    }
+  }
+
+  allHomework=snapshots;
+  $("#hwCount").textContent=allHomework.length;
+  $("#hwSlots").textContent=new Set(allHomework.map(x=>x.key)).size;
+  $("#hwPeople").textContent=new Set(
+    allHomework.map(x=>x.author||"Anonym")
+  ).size;
+
+  renderHomeworkMonitor();
+}
+
+function renderHomeworkMonitor(){
+  const q=($("#hwSearch").value||"").trim().toLowerCase();
+  const shown=allHomework.filter(x=>
+    !q || (x.text+" "+x.author+" "+x.key).toLowerCase().includes(q)
+  );
+
+  $("#monitorList").innerHTML=shown.map(x=>`
+    <div class="hwrow">
+      <div class="hwmeta">${escapeHtml(x.key)} · ${escapeHtml(x.author||"Anonym")}</div>
+      <div>${escapeHtml(x.text)}</div>
+      <div class="mono" style="margin-top:7px;opacity:.55">${escapeHtml(x.id)}</div>
+    </div>`).join("") || "<p style='color:var(--muted)'>Keine Treffer.</p>";
+}
+
+$("#hwSearch").oninput=renderHomeworkMonitor;
+$("#refreshHw").onclick=loadHomeworkMonitor;
+$("#openUntis").onclick=()=>location.href=JDNEXT_URL;
+
+renderDashboard();
 </script>
 </body>
 </html>
