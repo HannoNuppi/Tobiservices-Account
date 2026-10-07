@@ -3,89 +3,159 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Admin-Panel</title>
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TobiServices – Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="theme.css">
-<style>
-  #list{display:grid; gap:12px; margin-top:14px;}
-  .row{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; position:relative; z-index:1;}
-  .row .jd-input{width:auto; flex:1 1 130px;}
-  .row .mojo{flex:0 1 110px;}
-  .jd-pill a{cursor:pointer; margin-left:6px; opacity:.8;}
-</style>
 </head>
 <body class="jd-page">
 <div class="jd-wrap">
   <div class="jd-topbar">
-    <div class="jd-logo"><span class="jd-logo-tag">Netzwerk</span>
-      <div class="jd-logo-main"><span>ADMIN</span><span class="l2">PANEL</span></div></div>
+    <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span>
+      <div class="jd-logo-main"><span>ADMIN</span><span class="l2">CENTER</span></div>
+    </div>
     <span class="jd-pill" id="count">Lädt …</span>
   </div>
-  <div id="app">
-    <input class="jd-input" id="q" placeholder="Nach Name oder E-Mail suchen" style="margin-top:16px">
-    <div id="list"></div>
-  </div>
-  <datalist id="tags"></datalist>
+
+  <div id="app" style="margin-top:16px"></div>
 </div>
+
 <script src="theme.js"></script>
 <script type="module">
-import { auth, onUser, isAdmin, listUsers, setTags, setMojo, cleanTag, requireLogin } from "./auth-core.js";
-const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+import { auth, onUser, isAdmin, listUsers, setTags, requireLogin } from "./auth-core.js";
+
+const $ = s => document.querySelector(s);
 let users = [];
 
-onUser(async (u) => {
-  if (!u) return requireLogin();
-  if (!(await isAdmin())) {
-    $("#app").innerHTML = '<div class="jd-banner" style="margin-top:16px"><b>Kein Zugriff.</b> Dieses Konto ist kein Admin.</div>';
-    $("#count").remove(); return;
+onUser(async (user, profile) => {
+  if (!user || !user.emailVerified) return requireLogin();
+  if (!isAdmin(profile)) {
+    $("#app").innerHTML =
+      '<div class="jd-banner"><b>Kein Zugriff.</b> Dieses Konto besitzt nicht den Admin-Tag.</div>';
+    $("#count").remove();
+    return;
   }
-  users = await listUsers(); render();
+
+  try {
+    users = await listUsers();
+    render();
+  } catch (error) {
+    console.error(error);
+    $("#app").innerHTML =
+      '<div class="jd-banner"><b>Fehler.</b> Die Accounts konnten nicht geladen werden.</div>';
+    $("#count").remove();
+  }
 });
 
 function render() {
-  const q = $("#q").value.toLowerCase();
-  const shown = users.filter((u) => ((u.displayName || "") + (u.email || "")).toLowerCase().includes(q));
+  const query = $("#q")?.value.trim().toLowerCase() || "";
+  const shown = users.filter(u =>
+    ((u.displayName || "") + " " + (u.email || "")).toLowerCase().includes(query)
+  );
+
   $("#count").textContent = users.length + " Accounts";
-  $("#tags").innerHTML = [...new Set(users.flatMap((u) => u.tags || []))].map((t) => `<option value="${esc(t)}">`).join("");
-  $("#list").innerHTML = shown.map((u) => `
-    <div class="jd-card" data-uid="${esc(u.uid)}">
-      <h3>${esc(u.displayName)}</h3><p>${esc(u.email)}</p>
-      <div class="row">${(u.tags || []).map((t) => `<span class="jd-pill">${esc(t)}<a data-rm="${esc(t)}">×</a></span>`).join("") || "<span style='color:var(--muted);font-size:13px'>Noch keine Tags</span>"}</div>
-      <div class="row">
-        <input class="jd-input tag" list="tags" placeholder="Neuer Tag" maxlength="24">
-        <button class="jd-btn-ghost" data-add>Tag hinzufügen</button>
-      </div>
-      <div class="row">
-        <input class="jd-input mojo" type="number" min="0" step="1" value="${u.mojo | 0}" aria-label="Mojo">
-        <button class="jd-btn" data-save>Mojo speichern</button>
-      </div>
-    </div>`).join("") || "<p>Keine Accounts gefunden.</p>";
+
+  $("#list").innerHTML = shown.map(u => {
+    const tags = Array.isArray(u.tags) ? u.tags : [];
+    return `
+      <div class="jd-card" data-uid="${escapeHtml(u.uid)}">
+        <h3 class="username"></h3>
+        <p class="email"></p>
+
+        <div style="margin-top:12px;font-size:12px;color:var(--muted)">Tags</div>
+        <div class="tagbox" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:7px"></div>
+
+        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <input class="jd-input tag" maxlength="24" placeholder="Neuer Tag">
+          <button class="jd-btn-ghost" type="button" data-add>Tag hinzufügen</button>
+        </div>
+      </div>`;
+  }).join("") || "<p>Keine Accounts gefunden.</p>";
+
+  shown.forEach(u => {
+    const card = document.querySelector(`[data-uid="${CSS.escape(u.uid)}"]`);
+    if (!card) return;
+
+    card.querySelector(".username").textContent = u.displayName || "(ohne Namen)";
+    card.querySelector(".email").textContent = u.email || "";
+
+    const tagbox = card.querySelector(".tagbox");
+    (Array.isArray(u.tags) ? u.tags : []).forEach(tag => {
+      const pill = document.createElement("span");
+      pill.className = "jd-pill";
+      pill.textContent = tag;
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.setAttribute("data-rm", tag);
+      remove.style.cssText = "margin-left:6px;border:0;background:none;color:inherit;cursor:pointer;font:inherit;";
+      pill.appendChild(remove);
+      tagbox.appendChild(pill);
+    });
+  });
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[c]
+  );
+}
+
+document.getElementById("app").insertAdjacentHTML("afterbegin", `
+  <input class="jd-input" id="q" maxlength="100"
+         placeholder="Nach Name oder E-Mail suchen" autocomplete="off">
+  <div id="list" style="display:grid;gap:12px;margin-top:14px"></div>
+`);
+
 $("#q").oninput = render;
-$("#list").addEventListener("click", async (e) => {
-  const card = e.target.closest("[data-uid]"); if (!card) return;
-  const u = users.find((x) => x.uid === card.dataset.uid), t = e.target;
+
+document.getElementById("list").addEventListener("click", async event => {
+  const card = event.target.closest("[data-uid]");
+  if (!card) return;
+
+  const user = users.find(u => u.uid === card.dataset.uid);
+  if (!user) return;
+
+  const button = event.target.closest("[data-rm],[data-add]");
+  if (!button) return;
+
   try {
-    if (t.dataset.rm) {
-      if (t.dataset.rm === "admin" && u.uid === auth.currentUser.uid) return jdToast("Du kannst dir den Admin-Tag nicht selbst entfernen.");
-      u.tags = u.tags.filter((x) => x !== t.dataset.rm); await setTags(u.uid, u.tags);
+    let tags = Array.isArray(user.tags) ? [...user.tags] : [];
+
+    if (button.dataset.rm) {
+      const tag = button.dataset.rm;
+
+      if (
+        tag === "admin" &&
+        user.uid === auth.currentUser.uid
+      ) {
+        return jdToast("Den eigenen Admin-Tag kannst du hier nicht entfernen.");
+      }
+
+      tags = tags.filter(t => t !== tag);
+    } else {
+      const input = card.querySelector(".tag");
+      const tag = String(input.value || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9äöüß_-]+/g, "-")
+        .slice(0, 24);
+
+      if (!tag) return jdToast("Bitte einen gültigen Tag eingeben.");
+      if (tags.includes(tag)) return jdToast("Diesen Tag hat der Account bereits.");
+      if (tags.length >= 20) return jdToast("Maximal 20 Tags pro Account.");
+      tags.push(tag);
     }
-    else if (t.hasAttribute("data-add")) {
-      const tag = cleanTag(card.querySelector(".tag").value);
-      if (!tag) return;
-      if (!(u.tags || []).includes(tag)) { u.tags = [...(u.tags || []), tag]; await setTags(u.uid, u.tags); }
-    }
-    else if (t.hasAttribute("data-save")) {
-      u.mojo = Math.max(0, parseInt(card.querySelector(".mojo").value, 10) || 0); await setMojo(u.uid, u.mojo);
-    }
-    else return;
-    jdToast("Gespeichert"); render();
-  } catch (err) {
-    jdToast("Speichern fehlgeschlagen: " + err.code);
-    users = await listUsers(); render();
+
+    await setTags(user.uid, tags);
+    user.tags = tags;
+    render();
+    jdToast("Tag gespeichert");
+  } catch (error) {
+    console.error(error);
+    jdToast("Änderung wurde von den Sicherheitsregeln abgelehnt.");
   }
 });
 </script>
