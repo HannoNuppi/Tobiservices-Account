@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>TobiServices – Account</title>
+<title>TobiServices – Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="theme.css">
@@ -12,7 +12,8 @@
 <body class="jd-page">
 <div class="jd-wrap" style="max-width:460px">
   <div class="jd-topbar">
-    <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span>
+    <div class="jd-logo">
+      <span class="jd-logo-tag">TobiServices</span>
       <div class="jd-logo-main"><span>ACCOUNT</span><span class="l2">CENTER</span></div>
     </div>
   </div>
@@ -24,8 +25,8 @@
 <script type="module">
 import {
   auth,
+  login,
   onUser,
-  ensureAccount,
   signOut,
   safeReturnUrl,
   CONFIG
@@ -35,93 +36,75 @@ const $=s=>document.querySelector(s);
 const ret=safeReturnUrl(new URLSearchParams(location.search).get("return")||"");
 let busy=false;
 
-function goAfterLogin(){
-  location.replace(ret||CONFIG.accountUrl);
+function showError(error){
+  console.error(error);
+  const code=error?.code||"";
+  if(code.includes("unauthenticated")){
+    return jdToast("Username oder Passwort ist falsch.");
+  }
+  if(code.includes("unavailable") || code.includes("failed-precondition")){
+    return jdToast("TobiServices-Server ist noch nicht bereit oder nicht erreichbar.");
+  }
+  jdToast("Anmeldung fehlgeschlagen.");
 }
 
-function renderStart(){
+function renderLogin(){
   $("#card").innerHTML=`
     <h3>TobiServices Account</h3>
-    <p>Kein Passwort und keine E-Mail nötig. Dein Account wird sicher mit Firebase verknüpft.</p>
-    <form id="startForm" style="display:grid;gap:10px;margin-top:14px">
-      <input class="jd-input" id="name" maxlength="40" minlength="1"
-        placeholder="Anzeigename" autocomplete="nickname" required>
-      <small style="color:var(--muted)">
-        Der Anzeigename ist öffentlich innerhalb der TobiServices-Dienste.
-      </small>
-      <button class="jd-btn" id="startBtn">Account starten</button>
+    <p>Keine E-Mail-Adresse nötig. Verwende deinen von TobiServices angelegten Username und dein Passwort.</p>
+
+    <form id="loginForm" style="display:grid;gap:10px;margin-top:14px">
+      <input class="jd-input" id="username" maxlength="32"
+        placeholder="Username" autocomplete="username" required>
+      <input class="jd-input" id="password" maxlength="128"
+        type="password" placeholder="Passwort" autocomplete="current-password" required>
+      <button class="jd-btn" id="loginBtn">Anmelden</button>
     </form>
+
     <p style="font-size:11px;color:var(--muted);margin-top:14px">
-      Dieser Firebase-Account ist anonym und wird an diesen Browser gebunden.
+      Accounts werden manuell über das TobiServices-Adminsystem angelegt.
     </p>`;
 
-  $("#startForm").onsubmit=async e=>{
-    e.preventDefault();
+  $("#loginForm").onsubmit=async event=>{
+    event.preventDefault();
     if(busy) return;
 
-    const name=$("#name").value.trim();
-    if(name.length<1||name.length>40){
-      return jdToast("Der Anzeigename muss 1–40 Zeichen lang sein.");
-    }
-
     busy=true;
-    $("#startBtn").disabled=true;
+    $("#loginBtn").disabled=true;
+
     try{
-      await ensureAccount(name);
-      goAfterLogin();
+      await login($("#username").value.trim(), $("#password").value);
+      location.replace(ret||CONFIG.accountUrl);
     }catch(error){
-      console.error(error);
-      jdToast(error.code==="operation-not-allowed"
-        ? "Anonyme Anmeldung ist in Firebase noch nicht aktiviert."
-        : "Account konnte nicht erstellt werden.");
+      showError(error);
+      $("#loginBtn").disabled=false;
       busy=false;
-      $("#startBtn").disabled=false;
     }
   };
 }
 
 onUser((user,profile)=>{
   if(!user){
-    renderStart();
+    renderLogin();
     return;
   }
 
   if(busy) return;
 
-  if(!profile){
-    $("#card").innerHTML=`
-      <h3>Account einrichten</h3>
-      <p>Wähle deinen Anzeigenamen.</p>
-      <input class="jd-input" id="name" maxlength="40" placeholder="Anzeigename"
-        style="margin-top:12px">
-      <button class="jd-btn" id="continue" style="margin-top:10px">Weiter</button>`;
-    $("#continue").onclick=async()=>{
-      try{
-        await ensureAccount($("#name").value.trim());
-        location.reload();
-      }catch(e){
-        jdToast("Account konnte nicht eingerichtet werden.");
-      }
-    };
-    return;
-  }
-
   $("#card").innerHTML=`
-    <h3 id="welcome"></h3>
-    <p>Du bist bereits angemeldet.</p>
+    <h3>Bereits angemeldet</h3>
+    <p id="welcome"></p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
       <button class="jd-btn" id="account">Accountseite</button>
-      <button class="jd-btn-ghost" id="logout">Account wechseln</button>
+      <button class="jd-btn-ghost" id="logout">Abmelden</button>
     </div>`;
 
-  $("#welcome").textContent=user.displayName||profile.displayName||"TobiServices Account";
+  $("#welcome").textContent=(profile?.displayName||user.displayName||"TobiServices Account")+" ist bereits angemeldet.";
   $("#account").onclick=()=>location.href=CONFIG.accountUrl;
   $("#logout").onclick=async()=>{
     await signOut();
-    location.reload();
+    renderLogin();
   };
-
-  if(ret) goAfterLogin();
 });
 </script>
 </body>
