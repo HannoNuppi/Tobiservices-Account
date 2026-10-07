@@ -2,74 +2,73 @@
 
 Zentrales, E-Mail-freies Account-System für TobiServices-Websites.
 
-## Anmeldung
+## Account-Modell
 
-TobiServices verwendet **Firebase Anonymous Authentication**. Es wird beim Start eines Accounts kein E-Mail-Konto benötigt.
+TobiServices verwendet eigene Accounts mit **Username + Passwort**.
 
-Der Account besteht aus einer Firebase-UID plus einem Anzeigenamen und optionalen Tags.
+Es gibt keine E-Mail-Adresse und keine Firebase-E-Mail/Passwort-Anmeldung. Die Passwortprüfung passiert serverseitig in Firebase Cloud Functions mit scrypt. Die Passwortdaten liegen in der geschützten Firestore-Sammlung `tobiAccounts` und werden niemals an Browser-Clients ausgeliefert.
 
-Wichtig: Ein anonymes Firebase-Konto ist an die lokale Firebase-Sitzung des Browsers gebunden. Ohne eine später verknüpfte Anmeldemethode gibt es keine sichere Wiederherstellung desselben Accounts auf einem anderen Gerät.
+Für die Sitzung wird intern ein Firebase Custom Token verwendet. Dadurch können Firestore Rules weiterhin sicher mit `request.auth.uid` arbeiten. Benutzer sehen davon nur die normale TobiServices-Anmeldung.
 
 ## Einmalige Firebase-Einrichtung
 
-In Firebase Console:
+Im lokalen Projektordner:
 
-1. **Authentication** → **Sign-in method**
-2. Den Anbieter **Anonymous / Anonym** aktivieren.
-3. Firestore Database anlegen.
-4. `firestore.rules` veröffentlichen.
-5. Einen Account über `login.html` starten.
-6. Das dadurch erzeugte `users/<UID>`-Dokument einmalig manuell mit `tags: ["admin"]` versehen.
+1. Firebase CLI installieren und mit deinem Google/Firebase-Konto anmelden.
+2. Projekt `tobiservices` auswählen.
+3. Einen geheimen Bootstrap-Schlüssel setzen:
+   `firebase functions:secrets:set TOBI_BOOTSTRAP_KEY`
+4. Backend und Firestore Rules deployen:
+   `firebase deploy --only functions,firestore`
+5. Den lokalen TobiServices Account Client starten.
+6. Unter „Ersten Admin anlegen“ denselben Bootstrap-Schlüssel verwenden.
 
-Die offizielle Firebase-Dokumentation beschreibt die anonyme Anmeldung unter „Sicherheit → Authentifizierung → Anmeldemethode → Anonym“. 
+Der Bootstrap-Endpunkt lässt sich nach dem Erstellen des ersten Admins nicht mehr zur Erstellung eines weiteren Admins verwenden.
+
+Cloud Functions für Firebase benötigen aktuell den Blaze-Tarif. citeturn610044search2
 
 ## Seiten
 
-- `login.html` – Account starten
+- `login.html` – Username/Passwort-Login
 - `account.html` – eigener Account und Tags
 - `admin.html` – Admin Center
-- `auth-core.js` – gemeinsames Auth-Modul
-- `firestore.rules` – Sicherheitsregeln
+- `auth-core.js` – gemeinsames Client-Modul
+- `functions/index.js` – serverseitige Account-Logik
+- `functions/package.json` – Backend-Abhängigkeiten
+- `firestore.rules` – geschützte Regeln
 
 ## Admin Center
 
 Das Admin Center unterstützt:
 
-- Accountsuche nach Anzeigename oder UID
-- Tag-Filter
-- Tags hinzufügen/entfernen
-- Bulk-Änderungen für mehrere Accounts
-- UID kopieren
+- Accounts manuell erstellen
+- Accounts suchen
+- Tags hinzufügen und entfernen
+- Tags als Bulk-Aktion ändern
+- Accounts deaktivieren und aktivieren
+- UID anzeigen und kopieren
 - CSV-Export
-- Account-Statistiken
 - JDNEXT-Hausaufgaben-Monitor für `next-untis-plus`
 
-## Verbindung mit Websites
+## JDNEXT
 
-Eine Website kann das Auth-Modul direkt verwenden:
+JDNEXT verwendet weiterhin das alte Firebase-Projekt `next-untis-plus`.
 
-```html
-<script type="module">
-import {
-  onUser,
-  requireLogin,
-  hasTag
-} from "https://hannonuppi.github.io/Tobiservices-Account/auth-core.js";
+- Stundenplan und Hausaufgaben lesen: ohne TobiServices-Account
+- Hausaufgaben posten: ohne TobiServices-Account
+- Meldungen: anonyme Firebase-Identität im Hintergrund
+- TobiServices wird nur für eigene accountbezogene Funktionen benötigt
 
-onUser((user, profile) => {
-  if (!user) return requireLogin();
-
-  console.log(profile?.displayName, profile?.tags);
-
-  if (hasTag(profile, "admin")) {
-    // Admin-Bereich
-  }
-});
-</script>
-```
-
-TobiServices und JDNEXT verwenden bewusst **getrennte Firebase-Projekte**. JDNEXT benutzt weiterhin `next-untis-plus`; der TobiServices-Account ist dort optional und wird nicht zur Anzeige öffentlicher Hausaufgaben benötigt.
+Die JDNEXT-API-Konfiguration ist unabhängig vom TobiServices-Projekt.
 
 ## Sicherheit
 
-Die Firestore-Regeln erlauben Benutzern nur den Zugriff auf das eigene Profil. Rollen und Tags können nicht vom Benutzer selbst gesetzt werden; Admin-Änderungen werden serverseitig durch Firestore Rules geschützt.
+- Passwortprüfung nur serverseitig
+- scrypt mit zufälligem Salt
+- Passwort-Hash und Salt sind für normale Clients nicht lesbar
+- `tobiAccounts` ist komplett durch Firestore Rules gesperrt
+- Admin-Aktionen laufen über geschützte Callable Functions
+- eigene Admin-Rolle kann nicht versehentlich vom letzten Admin entfernt werden
+- deaktivierte Accounts werden bei der Anmeldung abgewiesen
+
+Firebase beschreibt Custom Tokens ausdrücklich als serverseitig erzeugte Tokens, die anschließend mit `signInWithCustomToken()` am Client verwendet werden können. citeturn610044search0turn610044search3
