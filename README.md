@@ -25,7 +25,7 @@ Im lokalen Projektordner:
 
 Der Bootstrap-Endpunkt lässt sich nach dem Erstellen des ersten Admins nicht mehr zur Erstellung eines weiteren Admins verwenden.
 
-Cloud Functions für Firebase benötigen aktuell den Blaze-Tarif. citeturn610044search2
+Cloud Functions für Firebase benötigen aktuell den Blaze-Tarif.
 
 ## Seiten
 
@@ -71,4 +71,4 @@ Die JDNEXT-API-Konfiguration ist unabhängig vom TobiServices-Projekt.
 - eigene Admin-Rolle kann nicht versehentlich vom letzten Admin entfernt werden
 - deaktivierte Accounts werden bei der Anmeldung abgewiesen
 
-Firebase beschreibt Custom Tokens ausdrücklich als serverseitig erzeugte Tokens, die anschließend mit `signInWithCustomToken()` am Client verwendet werden können. citeturn610044search0turn610044search3
+Firebase beschreibt Custom Tokens als serverseitig erzeugte Tokens, die anschließend mit `signInWithCustomToken()` am Client verwendet werden können.
