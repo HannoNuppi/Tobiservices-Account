@@ -1,13 +1,28 @@
-/* Gemeinsames Accountsystem. Diese Datei einmal hosten (z. B. Repo "accounts")
-   und von allen Websites per <script type="module"> importieren. */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  updateProfile, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, getDocs, collection, query, limit,
-  writeBatch, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+/* TobiServices Account Core
+   Zentrale Firebase-Authentifizierung für alle TobiServices-Websites. */
 
-export const CONFIG = {
-  // Aus der Firebase-Konsole: Projekteinstellungen > Deine Apps > Web-App
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut as firebaseSignOut
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+export const CONFIG = Object.freeze({
   firebase: {
     apiKey: "AIzaSyCwVh8-JIm-pj8N8bOWgwz8-G_cLQ6AVuQ",
     authDomain: "tobiservices.firebaseapp.com",
@@ -15,69 +30,136 @@ export const CONFIG = {
     storageBucket: "tobiservices.firebasestorage.app",
     messagingSenderId: "552906640909",
     appId: "1:552906640909:web:99f583a0f4145e96ee8f44",
-    measurementId: "G-9LKPHE93S1",
+    measurementId: "G-9LKPHE93S1"
   },
-  loginUrl: "https://hannonuppi.github.io/accounts/login.html",
-  allowedReturnHosts: ["hannonuppi.github.io"],   // Seiten, zu denen login.html zurückleiten darf
-};
+  loginUrl: "https://hannonuppi.github.io/Tobiservices-Account/login.html",
+  accountUrl: "https://hannonuppi.github.io/Tobiservices-Account/account.html",
+  allowedReturnHosts: ["hannonuppi.github.io"]
+});
 
 const app = initializeApp(CONFIG.firebase);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export { signOut };
 
-export const signIn = (email, pw) => signInWithEmailAndPassword(auth, email, pw);
-export const resetPassword = (email) => sendPasswordResetEmail(auth, email);
+await setPersistence(auth, browserLocalPersistence);
 
-export async function signUp(name, email, pw) {
-  const { user } = await createUserWithEmailAndPassword(auth, email, pw);
-  await updateProfile(user, { displayName: name });
-  await setDoc(doc(db, "users", user.uid), {
-    displayName: name, email, tags: [], mojo: 0,
-    createdAt: serverTimestamp(), mojoUpdatedAt: serverTimestamp(),
-  });
+export const signOut = () => firebaseSignOut(auth);
+
+export const signIn = (email, password) =>
+  signInWithEmailAndPassword(auth, String(email).trim(), password);
+
+export const resetPassword = (email) =>
+  sendPasswordResetEmail(auth, String(email).trim());
+
+function cleanDisplayName(value) {
+  return String(value ?? "").trim().slice(0, 40);
+}
+
+export async function signUp(displayName, email, password) {
+  const name = cleanDisplayName(displayName);
+  if (name.length < 1) throw new Error("display-name-required");
+
+  const { user } = await createUserWithEmailAndPassword(
+    auth,
+    String(email).trim(),
+    password
+  );
+
+  try {
+    await updateProfile(user, { displayName: name });
+
+    await setDoc(doc(db, "users", user.uid), {
+      displayName: name,
+      email: user.email || String(email).trim(),
+      tags: [],
+      createdAt: new Date(),
+      lastProfileChangeAt: new Date()
+    });
+
+    await sendEmailVerification(user);
+  } catch (error) {
+    console.error("Profil konnte nicht vollständig angelegt werden:", error);
+    throw error;
+  }
+
   return user;
+}
+
+export async function refreshCurrentUser() {
+  if (!auth.currentUser) return null;
+  await auth.currentUser.reload();
+  return auth.currentUser;
 }
 
 export async function getProfile(uid = auth.currentUser?.uid) {
   if (!uid) return null;
-  const s = await getDoc(doc(db, "users", uid));
-  return s.exists() ? { uid, ...s.data() } : null;
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? { uid, ...snap.data() } : null;
 }
 
-/** cb(user, profile) bei jedem Login/Logout. Profil enthält tags und mojo. */
-export function onUser(cb) {
-  return onAuthStateChanged(auth, async (u) => cb(u, u ? await getProfile(u.uid) : null));
-}
+export function onUser(callback) {
+  return onAuthStateChanged(auth, async user => {
+    if (!user) {
+      callback(null, null);
+      return;
+    }
 
-export const hasTag = (profile, tag) => !!profile?.tags?.includes(tag);
-
-export const isAdmin = async () => hasTag(await getProfile(), "admin");
-
-export function requireLogin() {
-  location.href = CONFIG.loginUrl + "?return=" + encodeURIComponent(location.href);
-}
-
-const defaultSite = () => location.host + "/" + (location.pathname.split("/")[1] || "");
-
-/** Mojo gutschreiben (positiv) oder ausgeben (negativ). Gibt true/false zurück.
-    Die Firestore-Regeln begrenzen Betrag und Tempo (siehe firestore.rules). */
-export async function changeMojo(delta, reason = "", site = defaultSite()) {
-  const u = auth.currentUser;
-  if (!u || !Number.isInteger(delta)) return false;
-  const b = writeBatch(db);
-  b.update(doc(db, "users", u.uid), { mojo: increment(delta), mojoUpdatedAt: serverTimestamp() });
-  b.set(doc(collection(db, "mojoLog")), {
-    uid: u.uid, site, delta, reason: String(reason).slice(0, 100), createdAt: serverTimestamp(),
+    const profile = await getProfile(user.uid);
+    callback(user, profile);
   });
-  try { await b.commit(); return true; } catch (e) { console.warn("Mojo abgelehnt:", e.code); return false; }
 }
 
-/* Nur für das Admin-Panel */
-export const cleanTag = (t) => t.toLowerCase().trim().replace(/[^a-z0-9äöüß_-]+/g, "-").slice(0, 24);
-export async function listUsers() {
-  const s = await getDocs(query(collection(db, "users"), limit(500)));
-  return s.docs.map((d) => ({ uid: d.id, ...d.data() }));
+export const hasTag = (profile, tag) =>
+  Array.isArray(profile?.tags) && profile.tags.includes(String(tag).toLowerCase());
+
+export const isAdmin = profile => hasTag(profile, "admin");
+
+export function requireLogin(returnUrl = location.href) {
+  let target = CONFIG.loginUrl;
+
+  try {
+    const url = new URL(returnUrl);
+    if (
+      url.protocol === "https:" &&
+      CONFIG.allowedReturnHosts.includes(url.hostname)
+    ) {
+      target += "?return=" + encodeURIComponent(url.href);
+    }
+  } catch {}
+
+  location.replace(target);
 }
-export const setTags = (uid, tags) => updateDoc(doc(db, "users", uid), { tags });
-export const setMojo = (uid, mojo) => updateDoc(doc(db, "users", uid), { mojo });
+
+export function safeReturnUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      CONFIG.allowedReturnHosts.includes(url.hostname)
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/* Admin-Funktionen: Die tatsächliche Berechtigung kommt ausschließlich
+   aus den Firestore Security Rules. */
+export async function listUsers() {
+  const { getDocs, collection, query, limit } =
+    await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+
+  const snap = await getDocs(query(collection(db, "users"), limit(500)));
+  return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+}
+
+export const setTags = async (uid, tags) => {
+  const normalized = [...new Set(
+    (Array.isArray(tags) ? tags : [])
+      .map(t => String(t).toLowerCase().trim())
+      .filter(Boolean)
+      .map(t => t.replace(/[^a-z0-9äöüß_-]+/g, "-").slice(0, 24))
+      .filter(Boolean)
+  )].slice(0, 20);
+
+  return updateDoc(doc(db, "users", uid), { tags: normalized });
+};
