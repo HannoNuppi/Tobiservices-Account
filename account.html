@@ -12,23 +12,16 @@
 <body class="jd-page">
 <div class="jd-wrap" style="max-width:720px">
   <div class="jd-topbar">
-    <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span>
+    <div class="jd-logo">
+      <span class="jd-logo-tag">TobiServices</span>
       <div class="jd-logo-main"><span>MEIN</span><span class="l2">ACCOUNT</span></div>
     </div>
   </div>
   <div id="app" style="margin-top:24px"></div>
 </div>
-
 <script src="theme.js"></script>
 <script type="module">
-import {
-  onUser,
-  ensureAccount,
-  signOut,
-  isAdmin,
-  CONFIG
-} from "./auth-core.js";
-
+import { onUser, signOut, isAdmin, CONFIG } from "./auth-core.js";
 const app=document.getElementById("app");
 
 onUser((user,profile)=>{
@@ -38,74 +31,36 @@ onUser((user,profile)=>{
   }
 
   if(!profile){
-    app.innerHTML=`
-      <div class="jd-card">
-        <h3>Account einrichten</h3>
-        <p>Lege deinen Anzeigenamen fest.</p>
-        <input class="jd-input" id="name" maxlength="40" placeholder="Anzeigename" style="margin-top:12px">
-        <button class="jd-btn" id="save" style="margin-top:10px">Speichern</button>
-      </div>`;
-    document.getElementById("save").onclick=async()=>{
-      try{
-        await ensureAccount(document.getElementById("name").value.trim());
-        location.reload();
-      }catch{
-        jdToast("Speichern fehlgeschlagen");
-      }
-    };
+    app.innerHTML="<div class=\"jd-card\"><h3>Account nicht gefunden</h3><p>Deine Sitzung ist gültig, aber das TobiServices-Profil fehlt. Bitte melde dich erneut an.</p><button class=\"jd-btn\" id=\"logout\" style=\"margin-top:12px\">Abmelden</button></div>";
+    document.getElementById("logout").onclick=async()=>{ await signOut(); location.href=CONFIG.loginUrl; };
     return;
   }
 
   const tags=Array.isArray(profile.tags)?profile.tags:[];
-
-  app.innerHTML=`
-    <div class="jd-card">
-      <h3 id="name"></h3>
-      <p>TobiServices Account</p>
-
-      <div style="margin-top:16px">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:7px">Tags</div>
-        <div id="tags" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-      </div>
-
-      <div style="margin-top:16px;font-size:11px;color:var(--muted)">
-        Account-ID
-        <div id="uid" class="mono" style="margin-top:5px;word-break:break-all"></div>
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
-        ${isAdmin(profile)?'<button class="jd-btn" id="admin">Admin Center</button>':""}
-        <button class="jd-btn-ghost" id="logout">Account wechseln</button>
-      </div>
-    </div>`;
+  app.innerHTML=
+    "<div class=\"jd-card\">"
+    +"<h3 id=\"name\"></h3>"
+    +"<p>TobiServices Account</p>"
+    +"<div style=\"margin-top:16px\"><div style=\"font-size:12px;color:var(--muted);margin-bottom:7px\">Tags</div><div id=\"tags\" style=\"display:flex;gap:8px;flex-wrap:wrap\"></div></div>"
+    +"<div style=\"margin-top:16px;font-size:11px;color:var(--muted)\">Username<div id=\"username\" class=\"mono\" style=\"margin-top:5px\"></div></div>"
+    +"<div style=\"margin-top:12px;font-size:11px;color:var(--muted)\">Account-ID<div id=\"uid\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
+    +"<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-top:18px\">"
+    +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
+    +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
 
   document.getElementById("name").textContent=user.displayName||profile.displayName||"TobiServices";
+  document.getElementById("username").textContent=profile.username||"(unbekannt)";
   document.getElementById("uid").textContent=user.uid;
 
   const tagBox=document.getElementById("tags");
   if(tags.length){
-    tags.forEach(tag=>{
-      const pill=document.createElement("span");
-      pill.className="jd-pill";
-      pill.textContent=tag;
-      tagBox.appendChild(pill);
-    });
+    tags.forEach(tag=>{ const pill=document.createElement("span"); pill.className="jd-pill"; pill.textContent=tag; tagBox.appendChild(pill); });
   }else{
-    const empty=document.createElement("span");
-    empty.style.color="var(--muted)";
-    empty.style.fontSize="13px";
-    empty.textContent="Keine Tags";
-    tagBox.appendChild(empty);
+    const empty=document.createElement("span"); empty.style.color="var(--muted)"; empty.style.fontSize="13px"; empty.textContent="Keine Tags"; tagBox.appendChild(empty);
   }
 
-  document.getElementById("logout").onclick=async()=>{
-    await signOut();
-    location.href=CONFIG.loginUrl;
-  };
-
-  document.getElementById("admin")?.addEventListener("click",()=>{
-    location.href="./admin.html";
-  });
+  document.getElementById("logout").onclick=async()=>{ await signOut(); location.href=CONFIG.loginUrl; };
+  document.getElementById("admin")?.addEventListener("click",()=>{ location.href="./admin.html"; });
 });
 </script>
 </body>
