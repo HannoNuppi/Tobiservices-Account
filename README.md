@@ -1,68 +1,75 @@
 # TobiServices Account Center
 
-Zentrales Konto-System für TobiServices-Websites.
+Zentrales, E-Mail-freies Account-System für TobiServices-Websites.
 
-## Enthalten
+## Anmeldung
 
-- E-Mail/Passwort-Login über Firebase Authentication
-- E-Mail-Verifizierung vor dem Zugriff
-- sichere Account-Seite
-- Tag-System, z. B. `admin`
-- Admin-Panel
-- strikte Firestore Security Rules
-- sichere Rücksprünge zu TobiServices-Websites
-- gemeinsamer Firebase-Standort für zukünftige TobiServices-Apps
+TobiServices verwendet **Firebase Anonymous Authentication**. Es wird beim Start eines Accounts kein E-Mail-Konto benötigt.
 
-## Firebase
+Der Account besteht aus einer Firebase-UID plus einem Anzeigenamen und optionalen Tags.
 
-Das Projekt verwendet Firebase `tobiservices`.
+Wichtig: Ein anonymes Firebase-Konto ist an die lokale Firebase-Sitzung des Browsers gebunden. Ohne eine später verknüpfte Anmeldemethode gibt es keine sichere Wiederherstellung desselben Accounts auf einem anderen Gerät.
 
-Die Firebase-Web-Konfiguration im Frontend ist kein geheimes Passwort. Die eigentliche Zugriffskontrolle erfolgt über Firebase Authentication und Firestore Security Rules.
+## Einmalige Firebase-Einrichtung
 
-### Einmalige Einrichtung in Firebase
+In Firebase Console:
 
-1. Authentication → Sign-in method → **E-Mail/Passwort** aktivieren.
-2. Firestore Database anlegen.
-3. Den Inhalt von `firestore.rules` im Firebase-Console-Tab **Rules** veröffentlichen.
-4. Unter Authentication → Settings → Authorized domains die GitHub-Pages-Domain eintragen:
-   `hannonuppi.github.io`
-5. Einen ersten Account über `login.html` registrieren.
-6. Nach bestätigter E-Mail das Firestore-Dokument `users/<UID>` öffnen und einmalig den Tag `admin` hinzufügen. Danach kann der Admin weitere Tags vergeben.
+1. **Authentication** → **Sign-in method**
+2. Den Anbieter **Anonymous / Anonym** aktivieren.
+3. Firestore Database anlegen.
+4. `firestore.rules` veröffentlichen.
+5. Einen Account über `login.html` starten.
+6. Das dadurch erzeugte `users/<UID>`-Dokument einmalig manuell mit `tags: ["admin"]` versehen.
 
-## Verbindung mit anderen TobiServices-Seiten
+Die offizielle Firebase-Dokumentation beschreibt die anonyme Anmeldung unter „Sicherheit → Authentifizierung → Anmeldemethode → Anonym“. 
 
-Websites auf `hannonuppi.github.io` können `auth-core.js` direkt als gemeinsames Auth-Modul importieren:
+## Seiten
+
+- `login.html` – Account starten
+- `account.html` – eigener Account und Tags
+- `admin.html` – Admin Center
+- `auth-core.js` – gemeinsames Auth-Modul
+- `firestore.rules` – Sicherheitsregeln
+
+## Admin Center
+
+Das Admin Center unterstützt:
+
+- Accountsuche nach Anzeigename oder UID
+- Tag-Filter
+- Tags hinzufügen/entfernen
+- Bulk-Änderungen für mehrere Accounts
+- UID kopieren
+- CSV-Export
+- Account-Statistiken
+- JDNEXT-Hausaufgaben-Monitor für `next-untis-plus`
+
+## Verbindung mit Websites
+
+Eine Website kann das Auth-Modul direkt verwenden:
 
 ```html
 <script type="module">
 import {
   onUser,
   requireLogin,
-  hasTag,
-  CONFIG
+  hasTag
 } from "https://hannonuppi.github.io/Tobiservices-Account/auth-core.js";
 
 onUser((user, profile) => {
-  if (!user || !user.emailVerified) return requireLogin();
-  console.log(profile.displayName, profile.tags);
+  if (!user) return requireLogin();
+
+  console.log(profile?.displayName, profile?.tags);
+
   if (hasTag(profile, "admin")) {
-    console.log("Admin-Zugriff");
+    // Admin-Bereich
   }
 });
 </script>
 ```
 
-Wichtig: Die verbundene Anwendung muss für ihre eigenen Firestore-Daten dieselbe Firebase-Projektbasis verwenden, wenn die Firestore Security Rules die Account-UID direkt als `request.auth.uid` auswerten sollen. Genau so wird die Stundenplan-App angebunden.
+TobiServices und JDNEXT verwenden bewusst **getrennte Firebase-Projekte**. JDNEXT benutzt weiterhin `next-untis-plus`; der TobiServices-Account ist dort optional und wird nicht zur Anzeige öffentlicher Hausaufgaben benötigt.
 
-## Sicherheitsmodell
+## Sicherheit
 
-- Nicht angemeldete Nutzer kommen nicht an geschützte Firestore-Daten.
-- Nutzer können sich nicht selbst den Admin-Tag geben.
-- Nutzer können ihren Anzeigenamen ändern, aber keine Rollen oder Sicherheitsfelder.
-- Admins können Tags anderer Nutzer verwalten.
-- Admins können ihren eigenen Admin-Tag nicht versehentlich entfernen.
-- Hausaufgaben werden als einzelne Dokumente statt als frei überschreibbares Array gespeichert.
-- Ein Report ist an die UID des meldenden Kontos gebunden und kann nicht verändert oder gelöscht werden.
-- Audit-/Mojo-Log-Einträge sind für den Browser nicht beschreibbar.
-
-Für echte serverseitige Aktionen, die z. B. automatisch Mojo vergeben, Admin-Rollen per Policy ändern oder Rate-Limits erzwingen sollen, sollte später eine vertrauenswürdige Backend-Komponente (z. B. Cloud Functions) verwendet werden.
+Die Firestore-Regeln erlauben Benutzern nur den Zugriff auf das eigene Profil. Rollen und Tags können nicht vom Benutzer selbst gesetzt werden; Admin-Änderungen werden serverseitig durch Firestore Rules geschützt.
