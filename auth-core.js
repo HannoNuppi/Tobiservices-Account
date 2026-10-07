@@ -19,7 +19,8 @@ import {
   doc,
   getDoc,
   setDoc,
-  updateDoc
+  updateDoc,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export const CONFIG = Object.freeze({
@@ -72,8 +73,8 @@ export async function signUp(displayName, email, password) {
       displayName: name,
       email: user.email || String(email).trim(),
       tags: [],
-      createdAt: new Date(),
-      lastProfileChangeAt: new Date()
+      createdAt: serverTimestamp(),
+      lastProfileChangeAt: serverTimestamp()
     });
 
     await sendEmailVerification(user);
