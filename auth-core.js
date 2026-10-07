@@ -105,8 +105,18 @@ export function onUser(callback) {
       return;
     }
 
-    const profile = await getProfile(user.uid);
-    callback(user, profile);
+    if (!user.emailVerified) {
+      callback(user, null);
+      return;
+    }
+
+    try {
+      const profile = await getProfile(user.uid);
+      callback(user, profile);
+    } catch (error) {
+      console.error("Accountprofil konnte nicht geladen werden:", error);
+      callback(user, null);
+    }
   });
 }
 
