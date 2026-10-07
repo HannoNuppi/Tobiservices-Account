@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>TobiServices – Login</title>
+<title>TobiServices – Account</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="theme.css">
@@ -23,168 +23,105 @@
 <script src="theme.js"></script>
 <script type="module">
 import {
-  signIn,
-  signUp,
-  signOut,
-  resetPassword,
+  auth,
   onUser,
+  ensureAccount,
+  signOut,
   safeReturnUrl,
   CONFIG
 } from "./auth-core.js";
 
-const $ = s => document.querySelector(s);
-const ret = safeReturnUrl(new URLSearchParams(location.search).get("return") || "");
-const errors = {
-  "auth/invalid-credential": "E-Mail oder Passwort stimmt nicht.",
-  "auth/email-already-in-use": "Diese E-Mail ist bereits registriert.",
-  "auth/weak-password": "Das Passwort ist zu schwach.",
-  "auth/invalid-email": "Bitte eine gültige E-Mail eingeben.",
-  "auth/too-many-requests": "Zu viele Versuche. Bitte versuche es später erneut.",
-  "auth/network-request-failed": "Netzwerkfehler. Prüfe deine Internetverbindung.",
-  "auth/operation-not-allowed": "E-Mail/Passwort ist in Firebase noch nicht aktiviert. Aktiviere diesen Anmeldedienst in der Firebase Console.",
-  "auth/api-key-not-valid.-please-pass-a-valid-api-key.": "Die Firebase-Konfiguration ist ungültig.",
-  "display-name-required": "Bitte gib einen Anzeigenamen ein."
-};
+const $=s=>document.querySelector(s);
+const ret=safeReturnUrl(new URLSearchParams(location.search).get("return")||"");
+let busy=false;
 
-let registration = false;
-let busy = false;
-
-function backAfterLogin() {
-  location.replace(ret || CONFIG.accountUrl);
+function goAfterLogin(){
+  location.replace(ret||CONFIG.accountUrl);
 }
 
-function render() {
-  $("#card").innerHTML = `
-    <h3>${registration ? "Konto erstellen" : "Anmelden"}</h3>
-    <p>${registration
-      ? "Ein sicherer Account für TobiServices-Websites."
-      : "Melde dich mit deinem TobiServices-Konto an."}</p>
-
-    <form id="authForm" style="display:grid;gap:10px;margin-top:14px">
-      ${registration
-        ? '<input class="jd-input" id="name" maxlength="40" placeholder="Anzeigename" autocomplete="nickname" required>'
-        : ""}
-      <input class="jd-input" id="email" type="email" maxlength="254" placeholder="E-Mail" autocomplete="email" required>
-      <input class="jd-input" id="password" type="password" minlength="10" placeholder="Passwort" autocomplete="${registration ? "new-password" : "current-password"}" required>
-      ${registration
-        ? '<small style="color:var(--muted)">Mindestens 10 Zeichen sowie Groß-/Kleinbuchstaben und eine Zahl.</small>'
-        : ""}
-      <button class="jd-btn" id="submitBtn">${registration ? "Konto erstellen" : "Anmelden"}</button>
+function renderStart(){
+  $("#card").innerHTML=`
+    <h3>TobiServices Account</h3>
+    <p>Kein Passwort und keine E-Mail nötig. Dein Account wird sicher mit Firebase verknüpft.</p>
+    <form id="startForm" style="display:grid;gap:10px;margin-top:14px">
+      <input class="jd-input" id="name" maxlength="40" minlength="1"
+        placeholder="Anzeigename" autocomplete="nickname" required>
+      <small style="color:var(--muted)">
+        Der Anzeigename ist öffentlich innerhalb der TobiServices-Dienste.
+      </small>
+      <button class="jd-btn" id="startBtn">Account starten</button>
     </form>
+    <p style="font-size:11px;color:var(--muted);margin-top:14px">
+      Dieser Firebase-Account ist anonym und wird an diesen Browser gebunden.
+    </p>`;
 
-    <div style="display:flex;justify-content:space-between;gap:12px;margin-top:14px">
-      <button class="jd-btn-ghost" id="switchBtn">
-        ${registration ? "Ich habe schon ein Konto" : "Konto erstellen"}
-      </button>
-      ${registration ? "" : '<button class="jd-btn-ghost" id="resetBtn">Passwort vergessen</button>'}
-    </div>
+  $("#startForm").onsubmit=async e=>{
+    e.preventDefault();
+    if(busy) return;
 
-    <div id="message" style="margin-top:12px;color:var(--muted);font-size:13px"></div>
-  `;
-
-  $("#switchBtn").onclick = () => {
-    registration = !registration;
-    render();
-  };
-
-  $("#resetBtn")?.addEventListener("click", async () => {
-    const email = $("#email").value.trim();
-    if (!email) return jdToast("Gib zuerst deine E-Mail ein.");
-
-    try {
-      await resetPassword(email);
-    } catch {
-      // Absichtlich keine Konten-Aufzählung nach außen.
-    }
-    jdToast("Falls ein passendes Konto existiert, wurde eine E-Mail verschickt.");
-  });
-
-  $("#authForm").onsubmit = async event => {
-    event.preventDefault();
-    if (busy) return;
-
-    const email = $("#email").value.trim();
-    const password = $("#password").value;
-
-    if (registration) {
-      const name = $("#name").value.trim();
-
-      if (name.length < 1 || name.length > 40) {
-        return jdToast("Der Anzeigename muss 1–40 Zeichen lang sein.");
-      }
-
-      if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{10,}$/.test(password)) {
-        return jdToast("Nutze mindestens 10 Zeichen, Groß-/Kleinbuchstaben und eine Zahl.");
-      }
+    const name=$("#name").value.trim();
+    if(name.length<1||name.length>40){
+      return jdToast("Der Anzeigename muss 1–40 Zeichen lang sein.");
     }
 
-    busy = true;
-    $("#submitBtn").disabled = true;
-
-    try {
-      const user = registration
-        ? await signUp($("#name").value.trim(), email, password)
-        : (await signIn(email, password)).user;
-
-      if (!user.emailVerified) {
-        await user.reload();
-      }
-
-      if (!user.emailVerified) {
-        await signOut();
-        jdToast("Bitte bestätige zuerst deine E-Mail-Adresse. Wir haben dir eine E-Mail geschickt.");
-        busy = false;
-        $("#submitBtn").disabled = false;
-        return;
-      }
-
-      backAfterLogin();
-    } catch (error) {
-      busy = false;
-      $("#submitBtn").disabled = false;
-      jdToast(errors[error.code] || "Anmeldung konnte nicht abgeschlossen werden.");
+    busy=true;
+    $("#startBtn").disabled=true;
+    try{
+      await ensureAccount(name);
+      goAfterLogin();
+    }catch(error){
+      console.error(error);
+      jdToast(error.code==="operation-not-allowed"
+        ? "Anonyme Anmeldung ist in Firebase noch nicht aktiviert."
+        : "Account konnte nicht erstellt werden.");
+      busy=false;
+      $("#startBtn").disabled=false;
     }
   };
 }
 
-onUser(async (user) => {
-  if (!user) {
-    render();
+onUser((user,profile)=>{
+  if(!user){
+    renderStart();
     return;
   }
 
-  if (!user.emailVerified) {
-    $("#card").innerHTML = `
-      <h3>E-Mail bestätigen</h3>
-      <p>Dein Konto ist angelegt, aber die E-Mail-Adresse wurde noch nicht bestätigt.</p>
-      <div style="display:grid;gap:10px;margin-top:14px">
-        <button class="jd-btn" id="verify">Bestätigungs-Mail erneut senden</button>
-        <button class="jd-btn-ghost" id="logout">Abmelden</button>
-      </div>`;
-    $("#verify").onclick = async () => {
-      try {
-        await user.sendEmailVerification();
-        jdToast("Bestätigungs-Mail wurde erneut gesendet.");
-      } catch {
-        jdToast("Die Mail konnte gerade nicht gesendet werden.");
+  if(busy) return;
+
+  if(!profile){
+    $("#card").innerHTML=`
+      <h3>Account einrichten</h3>
+      <p>Wähle deinen Anzeigenamen.</p>
+      <input class="jd-input" id="name" maxlength="40" placeholder="Anzeigename"
+        style="margin-top:12px">
+      <button class="jd-btn" id="continue" style="margin-top:10px">Weiter</button>`;
+    $("#continue").onclick=async()=>{
+      try{
+        await ensureAccount($("#name").value.trim());
+        location.reload();
+      }catch(e){
+        jdToast("Account konnte nicht eingerichtet werden.");
       }
     };
-    $("#logout").onclick = signOut;
     return;
   }
 
-  if (busy) return;
-
-  $("#card").innerHTML = `
+  $("#card").innerHTML=`
     <h3 id="welcome"></h3>
-    <p>Du bist angemeldet.</p>
+    <p>Du bist bereits angemeldet.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
       <button class="jd-btn" id="account">Accountseite</button>
-      <button class="jd-btn-ghost" id="logout">Abmelden</button>
+      <button class="jd-btn-ghost" id="logout">Account wechseln</button>
     </div>`;
-  $("#welcome").textContent = user.displayName || user.email;
-  $("#account").onclick = () => location.href = CONFIG.accountUrl;
-  $("#logout").onclick = signOut;
+
+  $("#welcome").textContent=user.displayName||profile.displayName||"TobiServices Account";
+  $("#account").onclick=()=>location.href=CONFIG.accountUrl;
+  $("#logout").onclick=async()=>{
+    await signOut();
+    location.reload();
+  };
+
+  if(ret) goAfterLogin();
 });
 </script>
 </body>
