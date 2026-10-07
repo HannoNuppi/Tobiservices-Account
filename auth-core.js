@@ -77,7 +77,13 @@ export async function signUp(displayName, email, password) {
       lastProfileChangeAt: serverTimestamp()
     });
 
-    await sendEmailVerification(user);
+    try {
+      await sendEmailVerification(user);
+    } catch (error) {
+      // Das Konto ist bereits erstellt. Ein Mailversandfehler darf den Signup
+      // nicht in einen scheinbaren Fehler verwandeln.
+      console.warn("Bestätigungs-Mail konnte nicht direkt gesendet werden:", error);
+    }
   } catch (error) {
     console.error("Profil konnte nicht vollständig angelegt werden:", error);
     throw error;
