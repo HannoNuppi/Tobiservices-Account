@@ -1,5 +1,5 @@
 /* TobiServices Account Core
-   Zentrale Firebase-Authentifizierung für alle TobiServices-Websites. */
+   E-Mail-freies Accountsystem auf Basis von Firebase Anonymous Auth. */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -7,11 +7,8 @@ import {
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
+  signInAnonymously,
   updateProfile,
-  sendEmailVerification,
-  sendPasswordResetEmail,
   signOut as firebaseSignOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
@@ -20,7 +17,11 @@ import {
   getDoc,
   setDoc,
   updateDoc,
-  serverTimestamp
+  serverTimestamp,
+  getDocs,
+  collection,
+  query,
+  limit
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export const CONFIG = Object.freeze({
@@ -46,56 +47,52 @@ await setPersistence(auth, browserLocalPersistence);
 
 export const signOut = () => firebaseSignOut(auth);
 
-export const signIn = (email, password) =>
-  signInWithEmailAndPassword(auth, String(email).trim(), password);
+export async function startAnonymousAccount(displayName) {
+  let user = auth.currentUser;
 
-export const resetPassword = (email) =>
-  sendPasswordResetEmail(auth, String(email).trim());
+  if (!user) {
+    user = (await signInAnonymously(auth)).user;
+  }
 
-function cleanDisplayName(value) {
-  return String(value ?? "").trim().slice(0, 40);
-}
-
-export async function signUp(displayName, email, password) {
-  const name = cleanDisplayName(displayName);
+  const name = String(displayName ?? "").trim().slice(0, 40);
   if (name.length < 1) throw new Error("display-name-required");
 
-  const { user } = await createUserWithEmailAndPassword(
-    auth,
-    String(email).trim(),
-    password
-  );
-
-  try {
+  if (user.displayName !== name) {
     await updateProfile(user, { displayName: name });
+  }
 
-    await setDoc(doc(db, "users", user.uid), {
+  const profileRef = doc(db, "users", user.uid);
+  const existing = await getDoc(profileRef);
+
+  if (!existing.exists()) {
+    await setDoc(profileRef, {
       displayName: name,
-      email: user.email || String(email).trim(),
       tags: [],
       createdAt: serverTimestamp(),
       lastProfileChangeAt: serverTimestamp()
     });
-
-    try {
-      await sendEmailVerification(user);
-    } catch (error) {
-      // Das Konto ist bereits erstellt. Ein Mailversandfehler darf den Signup
-      // nicht in einen scheinbaren Fehler verwandeln.
-      console.warn("Bestätigungs-Mail konnte nicht direkt gesendet werden:", error);
-    }
-  } catch (error) {
-    console.error("Profil konnte nicht vollständig angelegt werden:", error);
-    throw error;
   }
 
   return user;
 }
 
-export async function refreshCurrentUser() {
-  if (!auth.currentUser) return null;
-  await auth.currentUser.reload();
-  return auth.currentUser;
+export async function ensureAccount(displayName) {
+  const user = auth.currentUser;
+  if (!user) return startAnonymousAccount(displayName);
+
+  const profile = await getProfile(user.uid);
+  if (!profile && displayName) {
+    const name = String(displayName).trim().slice(0, 40);
+    await updateProfile(user, { displayName: name });
+    await setDoc(doc(db, "users", user.uid), {
+      displayName: name,
+      tags: [],
+      createdAt: serverTimestamp(),
+      lastProfileChangeAt: serverTimestamp()
+    });
+  }
+
+  return user;
 }
 
 export async function getProfile(uid = auth.currentUser?.uid) {
@@ -111,11 +108,6 @@ export function onUser(callback) {
       return;
     }
 
-    if (!user.emailVerified) {
-      callback(user, null);
-      return;
-    }
-
     try {
       const profile = await getProfile(user.uid);
       callback(user, profile);
@@ -127,7 +119,8 @@ export function onUser(callback) {
 }
 
 export const hasTag = (profile, tag) =>
-  Array.isArray(profile?.tags) && profile.tags.includes(String(tag).toLowerCase());
+  Array.isArray(profile?.tags) &&
+  profile.tags.includes(String(tag).toLowerCase());
 
 export const isAdmin = profile => hasTag(profile, "admin");
 
@@ -159,12 +152,7 @@ export function safeReturnUrl(value) {
   }
 }
 
-/* Admin-Funktionen: Die tatsächliche Berechtigung kommt ausschließlich
-   aus den Firestore Security Rules. */
 export async function listUsers() {
-  const { getDocs, collection, query, limit } =
-    await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-
   const snap = await getDocs(query(collection(db, "users"), limit(500)));
   return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
 }
