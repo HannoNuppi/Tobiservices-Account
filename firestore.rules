@@ -3,67 +3,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function authenticated() {
-      return request.auth != null;
-    }
-
-    function isAdmin() {
-      return authenticated()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags is list
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags.hasAny(['admin']);
-    }
-
-    function validTags(tags) {
-      return tags is list && tags.size() <= 20;
-    }
-
+    // TobiServices profile data. Password material and account control data
+    // are stored in tobiAccounts and are never exposed to clients.
     match /users/{uid} {
-      allow read: if authenticated() && (request.auth.uid == uid || isAdmin());
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update, delete: if false;
+    }
 
-      // Sowohl anonyme als auch andere Firebase-Accounts können ein Profil
-      // genau für ihre eigene UID anlegen. Tags sind beim Erstellen immer leer.
-      allow create: if authenticated()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly([
-          'displayName',
-          'tags',
-          'createdAt',
-          'lastProfileChangeAt'
-        ])
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() >= 1
-        && request.resource.data.displayName.size() <= 40
-        && request.resource.data.tags == []
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.lastProfileChangeAt == request.time;
-
-      // Nutzer dürfen nur ihren Namen ändern.
-      // Admins dürfen Tags ändern, aber niemals ihren eigenen letzten Admin-Tag entfernen.
-      allow update: if
-        (
-          isAdmin()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags'])
-          && validTags(request.resource.data.tags)
-          && !(
-            uid == request.auth.uid
-            && resource.data.tags.hasAny(['admin'])
-            && !request.resource.data.tags.hasAny(['admin'])
-          )
-        )
-        ||
-        (
-          authenticated()
-          && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['displayName', 'lastProfileChangeAt'])
-          && request.resource.data.displayName is string
-          && request.resource.data.displayName.size() >= 1
-          && request.resource.data.displayName.size() <= 40
-          && request.resource.data.lastProfileChangeAt == request.time
-        );
-
-      allow delete: if isAdmin();
+    match /tobiAccounts/{usernameKey} {
+      allow read, write: if false;
     }
 
     match /{document=**} {
