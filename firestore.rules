@@ -7,20 +7,8 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function signedIn() {
-      return authenticated() && request.auth.token.email_verified == true;
-    }
-
-    function owner(uid) {
-      return signedIn() && request.auth.uid == uid;
-    }
-
-    function ownerAuthenticated(uid) {
-      return authenticated() && request.auth.uid == uid;
-    }
-
     function isAdmin() {
-      return signedIn()
+      return authenticated()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags is list
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags.hasAny(['admin']);
@@ -30,14 +18,15 @@ service cloud.firestore {
       return tags is list && tags.size() <= 20;
     }
 
-    // Benutzerprofil
     match /users/{uid} {
-      allow read: if owner(uid) || isAdmin();
+      allow read: if authenticated() && (request.auth.uid == uid || isAdmin());
 
-      allow create: if ownerAuthenticated(uid)
+      // Sowohl anonyme als auch andere Firebase-Accounts können ein Profil
+      // genau für ihre eigene UID anlegen. Tags sind beim Erstellen immer leer.
+      allow create: if authenticated()
+        && request.auth.uid == uid
         && request.resource.data.keys().hasOnly([
           'displayName',
-          'email',
           'tags',
           'createdAt',
           'lastProfileChangeAt'
@@ -45,18 +34,16 @@ service cloud.firestore {
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() >= 1
         && request.resource.data.displayName.size() <= 40
-        && request.resource.data.email == request.auth.token.email
         && request.resource.data.tags == []
         && request.resource.data.createdAt == request.time
         && request.resource.data.lastProfileChangeAt == request.time;
 
-      // Ein Benutzer darf nur seinen Anzeigenamen ändern.
-      // Admins dürfen zusätzlich Tags verwalten.
+      // Nutzer dürfen nur ihren Namen ändern.
+      // Admins dürfen Tags ändern, aber niemals ihren eigenen letzten Admin-Tag entfernen.
       allow update: if
         (
           isAdmin()
-          && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['tags'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags'])
           && validTags(request.resource.data.tags)
           && !(
             uid == request.auth.uid
@@ -66,9 +53,10 @@ service cloud.firestore {
         )
         ||
         (
-          owner(uid)
+          authenticated()
+          && request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['displayName', 'lastProfileChangeAt'])
+              .hasOnly(['displayName', 'lastProfileChangeAt'])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() >= 1
           && request.resource.data.displayName.size() <= 40
@@ -78,50 +66,8 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Stundenplan-Hausaufgaben.
-    // Alte Array-Dokumente bleiben ausschließlich lesbar, damit vorhandene
-    // Daten nicht verloren gehen. Neue Einträge liegen einzeln in entries.
-    match /homework/{hwKey} {
-      allow read, create, update, delete: if false;
-
-      match /entries/{entryId} {
-        allow read: if signedIn();
-
-        allow create: if signedIn()
-          && request.resource.data.keys().hasOnly([
-            'text',
-            'author',
-            'authorUid',
-            'createdAt'
-          ])
-          && request.resource.data.text is string
-          && request.resource.data.text.size() >= 3
-          && request.resource.data.text.size() <= 1000
-          && request.resource.data.author is string
-          && request.resource.data.author.size() <= 80
-          && request.resource.data.authorUid == request.auth.uid
-          && request.resource.data.createdAt == request.time;
-
-        allow update, delete: if false;
-
-        match /reports/{reportUid} {
-          allow read: if owner(reportUid) || isAdmin();
-
-          allow create: if signedIn()
-            && reportUid == request.auth.uid
-            && exists(/databases/$(database)/documents/homework/$(hwKey)/entries/$(entryId))
-            && request.resource.data.keys().hasOnly(['createdAt'])
-            && request.resource.data.createdAt == request.time;
-
-          allow update, delete: if false;
-        }
-      }
-    }
-
-    // Keine clientseitigen Audit-/Mojo-Manipulationen.
-    match /mojoLog/{id} {
-      allow read: if isAdmin();
-      allow create, update, delete: if false;
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
