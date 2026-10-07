@@ -3,77 +3,186 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Konto</title>
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TobiServices – Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="theme.css">
-<style>
-  form{display:grid; gap:10px; position:relative; z-index:1; margin-top:12px;}
-  .sw{background:none; border:none; color:var(--cyan); cursor:pointer; font:inherit; font-size:13px; padding:0;}
-  .links{display:flex; justify-content:space-between; position:relative; z-index:1; margin-top:12px;}
-</style>
 </head>
 <body class="jd-page">
-<div class="jd-wrap" style="max-width:420px">
+<div class="jd-wrap" style="max-width:460px">
   <div class="jd-topbar">
-    <div class="jd-logo"><span class="jd-logo-tag">Netzwerk</span>
-      <div class="jd-logo-main"><span>MEIN</span><span class="l2">KONTO</span></div></div>
+    <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span>
+      <div class="jd-logo-main"><span>ACCOUNT</span><span class="l2">CENTER</span></div>
+    </div>
   </div>
+
   <div class="jd-card" style="margin-top:24px" id="card"></div>
 </div>
+
 <script src="theme.js"></script>
 <script type="module">
-import { signIn, signUp, signOut, resetPassword, onUser, CONFIG } from "./auth-core.js";
-const $ = (s) => document.querySelector(s);
-const ret = new URLSearchParams(location.search).get("return");
-const back = () => { try { const u = new URL(ret);
-  if (u.protocol === "https:" && CONFIG.allowedReturnHosts.includes(u.hostname)) location.href = u.href; } catch {} };
-const errs = {
+import {
+  signIn,
+  signUp,
+  signOut,
+  resetPassword,
+  onUser,
+  safeReturnUrl,
+  CONFIG
+} from "./auth-core.js";
+
+const $ = s => document.querySelector(s);
+const ret = safeReturnUrl(new URLSearchParams(location.search).get("return") || "");
+const errors = {
   "auth/invalid-credential": "E-Mail oder Passwort stimmt nicht.",
   "auth/email-already-in-use": "Diese E-Mail ist bereits registriert.",
-  "auth/weak-password": "Das Passwort braucht mindestens 6 Zeichen.",
+  "auth/weak-password": "Das Passwort ist zu schwach.",
   "auth/invalid-email": "Bitte eine gültige E-Mail eingeben.",
-  "auth/too-many-requests": "Zu viele Versuche. Bitte warte kurz.",
+  "auth/too-many-requests": "Zu viele Versuche. Bitte versuche es später erneut.",
+  "auth/network-request-failed": "Netzwerkfehler. Prüfe deine Internetverbindung.",
+  "display-name-required": "Bitte gib einen Anzeigenamen ein."
 };
-let reg = false, busy = false;
 
-function form() {
+let registration = false;
+let busy = false;
+
+function backAfterLogin() {
+  location.replace(ret || CONFIG.accountUrl);
+}
+
+function render() {
   $("#card").innerHTML = `
-    <h3>${reg ? "Konto erstellen" : "Anmelden"}</h3>
-    <p>${reg ? "Ein Konto für alle Seiten im Netzwerk." : "Willkommen zurück."}</p>
-    <form id="f">
-      ${reg ? '<input class="jd-input" id="n" placeholder="Anzeigename" maxlength="40" required autocomplete="nickname">' : ""}
-      <input class="jd-input" id="e" type="email" placeholder="E-Mail" required autocomplete="email">
-      <input class="jd-input" id="p" type="password" placeholder="Passwort" minlength="6" required autocomplete="${reg ? "new-password" : "current-password"}">
-      <button class="jd-btn" id="go">${reg ? "Konto erstellen" : "Anmelden"}</button>
+    <h3>${registration ? "Konto erstellen" : "Anmelden"}</h3>
+    <p>${registration
+      ? "Ein sicherer Account für TobiServices-Websites."
+      : "Melde dich mit deinem TobiServices-Konto an."}</p>
+
+    <form id="authForm" style="display:grid;gap:10px;margin-top:14px">
+      ${registration
+        ? '<input class="jd-input" id="name" maxlength="40" placeholder="Anzeigename" autocomplete="nickname" required>'
+        : ""}
+      <input class="jd-input" id="email" type="email" maxlength="254" placeholder="E-Mail" autocomplete="email" required>
+      <input class="jd-input" id="password" type="password" minlength="10" placeholder="Passwort" autocomplete="${registration ? "new-password" : "current-password"}" required>
+      ${registration
+        ? '<small style="color:var(--muted)">Mindestens 10 Zeichen sowie Groß-/Kleinbuchstaben und eine Zahl.</small>'
+        : ""}
+      <button class="jd-btn" id="submitBtn">${registration ? "Konto erstellen" : "Anmelden"}</button>
     </form>
-    <div class="links">
-      <button class="sw" id="sw">${reg ? "Ich habe schon ein Konto" : "Neu hier? Konto erstellen"}</button>
-      ${reg ? "" : '<button class="sw" id="rs">Passwort vergessen?</button>'}
-    </div>`;
-  $("#sw").onclick = () => { reg = !reg; form(); };
-  if ($("#rs")) $("#rs").onclick = async () => {
-    const e = $("#e").value; if (!e) return jdToast("Gib zuerst deine E-Mail ein.");
-    try { await resetPassword(e); } catch {}
-    jdToast("Falls das Konto existiert, ist eine E-Mail unterwegs.");
+
+    <div style="display:flex;justify-content:space-between;gap:12px;margin-top:14px">
+      <button class="jd-btn-ghost" id="switchBtn">
+        ${registration ? "Ich habe schon ein Konto" : "Konto erstellen"}
+      </button>
+      ${registration ? "" : '<button class="jd-btn-ghost" id="resetBtn">Passwort vergessen</button>'}
+    </div>
+
+    <div id="message" style="margin-top:12px;color:var(--muted);font-size:13px"></div>
+  `;
+
+  $("#switchBtn").onclick = () => {
+    registration = !registration;
+    render();
   };
-  $("#f").onsubmit = async (ev) => {
-    ev.preventDefault(); $("#go").disabled = true; busy = true;
+
+  $("#resetBtn")?.addEventListener("click", async () => {
+    const email = $("#email").value.trim();
+    if (!email) return jdToast("Gib zuerst deine E-Mail ein.");
+
     try {
-      reg ? await signUp($("#n").value.trim(), $("#e").value, $("#p").value) : await signIn($("#e").value, $("#p").value);
-      busy = false; ret ? back() : location.reload();
-    } catch (e) { busy = false; jdToast(errs[e.code] || "Das hat nicht geklappt: " + e.code); $("#go").disabled = false; }
+      await resetPassword(email);
+    } catch {
+      // Absichtlich keine Konten-Aufzählung nach außen.
+    }
+    jdToast("Falls ein passendes Konto existiert, wurde eine E-Mail verschickt.");
+  });
+
+  $("#authForm").onsubmit = async event => {
+    event.preventDefault();
+    if (busy) return;
+
+    const email = $("#email").value.trim();
+    const password = $("#password").value;
+
+    if (registration) {
+      const name = $("#name").value.trim();
+
+      if (name.length < 1 || name.length > 40) {
+        return jdToast("Der Anzeigename muss 1–40 Zeichen lang sein.");
+      }
+
+      if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{10,}$/.test(password)) {
+        return jdToast("Nutze mindestens 10 Zeichen, Groß-/Kleinbuchstaben und eine Zahl.");
+      }
+    }
+
+    busy = true;
+    $("#submitBtn").disabled = true;
+
+    try {
+      const user = registration
+        ? await signUp($("#name").value.trim(), email, password)
+        : (await signIn(email, password)).user;
+
+      if (!user.emailVerified) {
+        await user.reload();
+      }
+
+      if (!user.emailVerified) {
+        await signOut();
+        jdToast("Bitte bestätige zuerst deine E-Mail-Adresse. Wir haben dir eine E-Mail geschickt.");
+        busy = false;
+        $("#submitBtn").disabled = false;
+        return;
+      }
+
+      backAfterLogin();
+    } catch (error) {
+      busy = false;
+      $("#submitBtn").disabled = false;
+      jdToast(errors[error.code] || "Anmeldung konnte nicht abgeschlossen werden.");
+    }
   };
 }
 
-onUser((u, p) => {
-  if (!u) return form();
+onUser(async (user) => {
+  if (!user) {
+    render();
+    return;
+  }
+
+  if (!user.emailVerified) {
+    $("#card").innerHTML = `
+      <h3>E-Mail bestätigen</h3>
+      <p>Dein Konto ist angelegt, aber die E-Mail-Adresse wurde noch nicht bestätigt.</p>
+      <div style="display:grid;gap:10px;margin-top:14px">
+        <button class="jd-btn" id="verify">Bestätigungs-Mail erneut senden</button>
+        <button class="jd-btn-ghost" id="logout">Abmelden</button>
+      </div>`;
+    $("#verify").onclick = async () => {
+      try {
+        await user.sendEmailVerification();
+        jdToast("Bestätigungs-Mail wurde erneut gesendet.");
+      } catch {
+        jdToast("Die Mail konnte gerade nicht gesendet werden.");
+      }
+    };
+    $("#logout").onclick = signOut;
+    return;
+  }
+
   if (busy) return;
-  if (ret) return back();
-  $("#card").innerHTML = `<h3></h3><p>Angemeldet · ${p ? p.mojo : 0} Mojo</p>
-    <div class="links"><button class="jd-btn-ghost" id="lo">Abmelden</button></div>`;
-  $("#card h3").textContent = u.displayName || u.email;
-  $("#lo").onclick = () => signOut();
+
+  $("#card").innerHTML = `
+    <h3 id="welcome"></h3>
+    <p>Du bist angemeldet.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+      <button class="jd-btn" id="account">Accountseite</button>
+      <button class="jd-btn-ghost" id="logout">Abmelden</button>
+    </div>`;
+  $("#welcome").textContent = user.displayName || user.email;
+  $("#account").onclick = () => location.href = CONFIG.accountUrl;
+  $("#logout").onclick = signOut;
 });
 </script>
 </body>
