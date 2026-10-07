@@ -1,5 +1,8 @@
 /* TobiServices Account Core
-   E-Mail-freies Accountsystem auf Basis von Firebase Anonymous Auth. */
+   Benutzerdefinierte Username/Passwort-Accounts.
+   Firebase Authentication wird nur als interne, passwortlose Sitzung
+   mit Custom Tokens verwendet. Passwortprüfung und Accountverwaltung
+   passieren ausschließlich serverseitig über Cloud Functions. */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -7,22 +10,18 @@ import {
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
-  signInAnonymously,
-  updateProfile,
+  signInWithCustomToken,
   signOut as firebaseSignOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore,
   doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  serverTimestamp,
-  getDocs,
-  collection,
-  query,
-  limit
+  getDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getFunctions,
+  httpsCallable
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 export const CONFIG = Object.freeze({
   firebase: {
@@ -36,69 +35,48 @@ export const CONFIG = Object.freeze({
   },
   loginUrl: "https://hannonuppi.github.io/Tobiservices-Account/login.html",
   accountUrl: "https://hannonuppi.github.io/Tobiservices-Account/account.html",
-  allowedReturnHosts: ["hannonuppi.github.io"]
+  allowedReturnHosts: ["hannonuppi.github.io"],
+  functionsRegion: "europe-west1"
 });
 
 const app = initializeApp(CONFIG.firebase);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const functions = getFunctions(app, CONFIG.functionsRegion);
 
 await setPersistence(auth, browserLocalPersistence);
 
+const loginCall = httpsCallable(functions, "loginTobiAccount");
+const createAccountCall = httpsCallable(functions, "createTobiAccount");
+const listUsersCall = httpsCallable(functions, "listTobiUsers");
+const setTagsCall = httpsCallable(functions, "setTobiTags");
+const setDisabledCall = httpsCallable(functions, "setTobiDisabled");
+
 export const signOut = () => firebaseSignOut(auth);
 
-export async function startAnonymousAccount(displayName) {
-  let user = auth.currentUser;
+export async function login(username, password) {
+  const result = await loginCall({
+    username: String(username ?? "").trim(),
+    password: String(password ?? "")
+  });
 
-  if (!user) {
-    user = (await signInAnonymously(auth)).user;
-  }
+  const data = result.data || {};
+  if (!data.token) throw new Error("custom-token-missing");
 
-  const name = String(displayName ?? "").trim().slice(0, 40);
-  if (name.length < 1) throw new Error("display-name-required");
-
-  if (user.displayName !== name) {
-    await updateProfile(user, { displayName: name });
-  }
-
-  const profileRef = doc(db, "users", user.uid);
-  const existing = await getDoc(profileRef);
-
-  if (!existing.exists()) {
-    await setDoc(profileRef, {
-      displayName: name,
-      tags: [],
-      createdAt: serverTimestamp(),
-      lastProfileChangeAt: serverTimestamp()
-    });
-  }
-
-  return user;
-}
-
-export async function ensureAccount(displayName) {
-  const user = auth.currentUser;
-  if (!user) return startAnonymousAccount(displayName);
-
-  const profile = await getProfile(user.uid);
-  if (!profile && displayName) {
-    const name = String(displayName).trim().slice(0, 40);
-    await updateProfile(user, { displayName: name });
-    await setDoc(doc(db, "users", user.uid), {
-      displayName: name,
-      tags: [],
-      createdAt: serverTimestamp(),
-      lastProfileChangeAt: serverTimestamp()
-    });
-  }
-
-  return user;
+  const authResult = await signInWithCustomToken(auth, data.token);
+  return {
+    user: authResult.user,
+    profile: data.profile || null
+  };
 }
 
 export async function getProfile(uid = auth.currentUser?.uid) {
   if (!uid) return null;
+
   const snap = await getDoc(doc(db, "users", uid));
-  return snap.exists() ? { uid, ...snap.data() } : null;
+  return snap.exists()
+    ? { uid, ...snap.data() }
+    : null;
 }
 
 export function onUser(callback) {
@@ -123,6 +101,36 @@ export const hasTag = (profile, tag) =>
   profile.tags.includes(String(tag).toLowerCase());
 
 export const isAdmin = profile => hasTag(profile, "admin");
+
+export async function createAccount(username, password, displayName = "") {
+  const result = await createAccountCall({
+    username: String(username ?? "").trim(),
+    password: String(password ?? ""),
+    displayName: String(displayName ?? "").trim()
+  });
+  return result.data;
+}
+
+export async function listUsers() {
+  const result = await listUsersCall();
+  return Array.isArray(result.data?.users) ? result.data.users : [];
+}
+
+export async function setTags(uid, tags) {
+  const result = await setTagsCall({
+    uid: String(uid),
+    tags: Array.isArray(tags) ? tags : []
+  });
+  return result.data;
+}
+
+export async function setDisabled(uid, disabled) {
+  const result = await setDisabledCall({
+    uid: String(uid),
+    disabled: Boolean(disabled)
+  });
+  return result.data;
+}
 
 export function requireLogin(returnUrl = location.href) {
   let target = CONFIG.loginUrl;
@@ -151,20 +159,3 @@ export function safeReturnUrl(value) {
     return null;
   }
 }
-
-export async function listUsers() {
-  const snap = await getDocs(query(collection(db, "users"), limit(500)));
-  return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
-}
-
-export const setTags = async (uid, tags) => {
-  const normalized = [...new Set(
-    (Array.isArray(tags) ? tags : [])
-      .map(t => String(t).toLowerCase().trim())
-      .filter(Boolean)
-      .map(t => t.replace(/[^a-z0-9äöüß_-]+/g, "-").slice(0, 24))
-      .filter(Boolean)
-  )].slice(0, 20);
-
-  return updateDoc(doc(db, "users", uid), { tags: normalized });
-};
