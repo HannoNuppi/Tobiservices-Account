@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>TobiServices – Account</title>
+<title>TobiServices – Mein Account</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="theme.css">
@@ -21,78 +21,91 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { onUser, signOut, isAdmin, getProfile, auth } from "./auth-core.js";
+import {
+  onUser,
+  ensureAccount,
+  signOut,
+  isAdmin,
+  CONFIG
+} from "./auth-core.js";
 
-const app = document.getElementById("app");
+const app=document.getElementById("app");
 
-onUser(async (user, profile) => {
-  if (!user) {
-    location.replace("./login.html?return=" + encodeURIComponent(location.href));
+onUser((user,profile)=>{
+  if(!user){
+    location.replace("./login.html?return="+encodeURIComponent(location.href));
     return;
   }
 
-  if (!user.emailVerified) {
-    app.innerHTML = '<div class="jd-banner"><b>E-Mail noch nicht bestätigt.</b> Bitte bestätige deine Adresse über die E-Mail von TobiServices.</div>';
+  if(!profile){
+    app.innerHTML=`
+      <div class="jd-card">
+        <h3>Account einrichten</h3>
+        <p>Lege deinen Anzeigenamen fest.</p>
+        <input class="jd-input" id="name" maxlength="40" placeholder="Anzeigename" style="margin-top:12px">
+        <button class="jd-btn" id="save" style="margin-top:10px">Speichern</button>
+      </div>`;
+    document.getElementById("save").onclick=async()=>{
+      try{
+        await ensureAccount(document.getElementById("name").value.trim());
+        location.reload();
+      }catch{
+        jdToast("Speichern fehlgeschlagen");
+      }
+    };
     return;
   }
 
-  const tags = Array.isArray(profile?.tags) ? profile.tags : [];
+  const tags=Array.isArray(profile.tags)?profile.tags:[];
 
-  app.innerHTML = `
+  app.innerHTML=`
     <div class="jd-card">
       <h3 id="name"></h3>
-      <p id="email"></p>
+      <p>TobiServices Account</p>
 
-      <div style="margin-top:18px">
+      <div style="margin-top:16px">
         <div style="font-size:12px;color:var(--muted);margin-bottom:7px">Tags</div>
         <div id="tags" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
 
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:20px">
-        ${isAdmin(profile) ? '<button class="jd-btn" id="admin">Admin-Panel</button>' : ""}
-        <button class="jd-btn-ghost" id="logout">Abmelden</button>
+      <div style="margin-top:16px;font-size:11px;color:var(--muted)">
+        Account-ID
+        <div id="uid" class="mono" style="margin-top:5px;word-break:break-all"></div>
       </div>
-    </div>
 
-    <div class="jd-card" style="margin-top:14px">
-      <h3>Sicherheit</h3>
-      <p>Passwortänderung und Kontowiederherstellung laufen über Firebase Authentication.</p>
-      <button class="jd-btn-ghost" id="reset" style="margin-top:14px">Passwort-Reset-Mail senden</button>
-    </div>
-  `;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
+        ${isAdmin(profile)?'<button class="jd-btn" id="admin">Admin Center</button>':""}
+        <button class="jd-btn-ghost" id="logout">Account wechseln</button>
+      </div>
+    </div>`;
 
-  document.getElementById("name").textContent = user.displayName || "TobiServices Account";
-  document.getElementById("email").textContent = user.email || "";
+  document.getElementById("name").textContent=user.displayName||profile.displayName||"TobiServices";
+  document.getElementById("uid").textContent=user.uid;
 
-  const tagBox = document.getElementById("tags");
-  if (tags.length) {
-    tags.forEach(tag => {
-      const pill = document.createElement("span");
-      pill.className = "jd-pill";
-      pill.textContent = tag;
+  const tagBox=document.getElementById("tags");
+  if(tags.length){
+    tags.forEach(tag=>{
+      const pill=document.createElement("span");
+      pill.className="jd-pill";
+      pill.textContent=tag;
       tagBox.appendChild(pill);
     });
-  } else {
-    const text = document.createElement("span");
-    text.style.color = "var(--muted)";
-    text.style.fontSize = "13px";
-    text.textContent = "Keine Tags";
-    tagBox.appendChild(text);
+  }else{
+    const empty=document.createElement("span");
+    empty.style.color="var(--muted)";
+    empty.style.fontSize="13px";
+    empty.textContent="Keine Tags";
+    tagBox.appendChild(empty);
   }
 
-  document.getElementById("logout").onclick = signOut;
-  document.getElementById("admin")?.addEventListener("click", () => {
-    location.href = "./admin.html";
-  });
-
-  document.getElementById("reset").onclick = async () => {
-    try {
-      await auth.currentUser?.getIdToken(true);
-      const { resetPassword } = await import("./auth-core.js");
-      await resetPassword(user.email);
-    } catch {}
-    jdToast("Falls dein Konto existiert, wurde eine Reset-Mail angefordert.");
+  document.getElementById("logout").onclick=async()=>{
+    await signOut();
+    location.href=CONFIG.loginUrl;
   };
+
+  document.getElementById("admin")?.addEventListener("click",()=>{
+    location.href="./admin.html";
+  });
 });
 </script>
 </body>
