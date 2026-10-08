@@ -355,8 +355,7 @@ exports.setMaintenanceMode = onCall(async (request) => {
   await db.doc("siteSettings/jdnext").set({
     enabled,
     message,
-    updatedAt: FieldValue.serverTimestamp(),
-    updatedBy: adminUid
+    updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
 
   logger.info("JDNEXT maintenance mode changed", {
