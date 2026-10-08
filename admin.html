@@ -19,6 +19,9 @@
 .chip button{border:0;background:none;color:inherit;cursor:pointer;font:inherit}.bulk{display:none;padding:12px;margin-top:12px;border-radius:14px;background:rgba(51,240,224,.08);border:1px solid rgba(51,240,224,.25)}
 .bulk.show{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px}.check{width:18px;height:18px}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}
+.maintenance-box{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;margin-top:12px}
+.maintenance-toggle{display:flex;align-items:center;gap:10px;font-weight:700}
+.maintenance-toggle input{width:20px;height:20px;accent-color:#ff3ea8}
 </style>
 </head>
 <body class="jd-page">
@@ -65,6 +68,24 @@
   </section>
 
   <section class="jd-card" style="margin-top:14px">
+    <h3>JDNEXT Wartungsmodus</h3>
+    <p>Der Wartungsmodus wird sofort für alle Besucher der JDNEXT-Website übernommen. TobiServices selbst bleibt erreichbar.</p>
+    <div class="maintenance-box">
+      <label class="maintenance-toggle">
+        <input type="checkbox" id="maintenanceToggle">
+        <span>Website in Wartung</span>
+      </label>
+      <div>
+        <textarea class="jd-input" id="maintenanceMessage" maxlength="500" rows="3" style="width:100%;resize:vertical" placeholder="Optionale Nachricht für Besucher"></textarea>
+        <div class="actions">
+          <button class="jd-btn" id="saveMaintenance">Wartungsmodus speichern</button>
+          <span class="jd-pill" id="maintenanceStatus">Lade Status …</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="jd-card" style="margin-top:14px">
     <h3>JDNEXT Monitor</h3>
     <p>Öffentlich lesbare Hausaufgaben aus <span class="mono">next-untis-plus</span>.</p>
     <div class="grid">
@@ -77,7 +98,7 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth,onUser,isAdmin,listUsers,setTags,createAccount,setDisabled,requireLogin,CONFIG } from "./auth-core.js";
+import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,createAccount,setDisabled,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore,collection,getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -197,6 +218,41 @@ $("#exportCsv").onclick=function(){
   const csv=rows.map(function(row){return row.map(function(v){return "\""+String(v).replace(/"/g,"\"\"")+"\"";}).join(",");}).join("\r\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="tobiservices-accounts.csv";a.click();
 };
+async function loadMaintenanceMode(){
+  try{
+    const snap=await getDoc(doc(tobiDb,"siteSettings","jdnext"));
+    const data=snap.exists()?(snap.data()||{}):{};
+    $("#maintenanceToggle").checked=data.enabled===true;
+    $("#maintenanceMessage").value=typeof data.message==="string"?data.message:"";
+    $("#maintenanceStatus").textContent=data.enabled===true?"Wartung aktiv":"Normalbetrieb";
+  }catch(error){
+    console.error("Maintenance-Status konnte nicht geladen werden:",error);
+    $("#maintenanceStatus").textContent="Status konnte nicht geladen werden";
+    jdToast("Wartungsstatus konnte nicht geladen werden.");
+  }
+}
+
+async function saveMaintenance(){
+  const button=$("#saveMaintenance");
+  const enabled=$("#maintenanceToggle").checked;
+  const message=$("#maintenanceMessage").value.trim();
+  button.disabled=true;
+  $("#maintenanceStatus").textContent="Speichere …";
+  try{
+    await setMaintenanceMode(enabled,message);
+    $("#maintenanceStatus").textContent=enabled?"Wartung aktiv":"Normalbetrieb";
+    jdToast(enabled?"JDNEXT ist jetzt im Wartungsmodus.":"JDNEXT ist wieder freigegeben.");
+  }catch(error){
+    console.error("Maintenance speichern fehlgeschlagen:",error);
+    $("#maintenanceStatus").textContent="Speichern fehlgeschlagen";
+    jdToast(error?.message||"Wartungsmodus konnte nicht gespeichert werden.");
+  }finally{
+    button.disabled=false;
+  }
+}
+
+$("#saveMaintenance").onclick=saveMaintenance;
+
 async function loadHomeworkMonitor(){
   const now=new Date(),monday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-(now.getDay()+6)%7);
   const keys=[];
@@ -216,6 +272,7 @@ onUser(async function(user,profile){
   if(!isAdmin(profile)){$("#status").textContent="Kein Zugriff";return;}
   $("#status").textContent="Admin bestätigt";$("#accountBtn").onclick=function(){location.href=CONFIG.accountUrl;};
   $("#createCard").style.display="block";$("#accountsCard").style.display="block";
+  await loadMaintenanceMode();
   await refreshUsers();await loadHomeworkMonitor();
 });
 </script>
