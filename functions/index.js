@@ -346,6 +346,27 @@ exports.setTobiTags = onCall(async (request) => {
   return { ok: true, uid, tags };
 });
 
+exports.setMaintenanceMode = onCall(async (request) => {
+  const adminUid = await requireAdmin(request);
+
+  const enabled = request.data?.enabled === true;
+  const message = String(request.data?.message ?? "").trim().slice(0, 500);
+
+  await db.doc("siteSettings/jdnext").set({
+    enabled,
+    message,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: adminUid
+  }, { merge: true });
+
+  logger.info("JDNEXT maintenance mode changed", {
+    enabled,
+    updatedBy: adminUid
+  });
+
+  return { ok: true, enabled, message };
+});
+
 exports.setTobiDisabled = onCall(async (request) => {
   const adminUid = await requireAdmin(request);
   const uid = String(request.data?.uid ?? "");
