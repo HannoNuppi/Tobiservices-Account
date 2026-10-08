@@ -100,7 +100,7 @@
 <script type="module">
 import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,createAccount,setDisabled,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore,collection,getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore,collection,getDocs,doc,getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $=s=>document.querySelector(s);
 const OLD_CONFIG={apiKey:"AIzaSyBgkWUtFIH63yJUw4zTbNtplKL5HqDDXMg",authDomain:"next-untis-plus.firebaseapp.com",projectId:"next-untis-plus",storageBucket:"next-untis-plus.firebasestorage.app",messagingSenderId:"276114359651",appId:"1:276114359651:web:c357fa4cc4f395bf55bf56"};
