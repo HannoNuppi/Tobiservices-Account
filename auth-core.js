@@ -51,6 +51,7 @@ const createAccountCall = httpsCallable(functions, "createTobiAccount");
 const listUsersCall = httpsCallable(functions, "listTobiUsers");
 const setTagsCall = httpsCallable(functions, "setTobiTags");
 const setDisabledCall = httpsCallable(functions, "setTobiDisabled");
+const setMaintenanceModeCall = httpsCallable(functions, "setMaintenanceMode");
 
 export const signOut = () => firebaseSignOut(auth);
 
@@ -128,6 +129,14 @@ export async function setDisabled(uid, disabled) {
   const result = await setDisabledCall({
     uid: String(uid),
     disabled: Boolean(disabled)
+  });
+  return result.data;
+}
+
+export async function setMaintenanceMode(enabled, message = "") {
+  const result = await setMaintenanceModeCall({
+    enabled: Boolean(enabled),
+    message: String(message ?? "").trim().slice(0, 500)
   });
   return result.data;
 }
