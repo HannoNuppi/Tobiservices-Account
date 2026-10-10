@@ -79,6 +79,22 @@ Diese Collection hält eventuell noch alte Username/Passwort-Konten. Passwort-Ha
 
 Der Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt; Änderungen erfolgen ausschließlich über eine geschützte Admin-Cloud-Function.
 
+## Admin-Backend prüfen
+
+Das Admin Center ruft die Callable Cloud Functions `listTobiUsers`, `setTobiTags`, `setTobiDisabled` und `setMaintenanceMode` in `europe-west1` auf. Wenn im Admin Center `Backend-Funktion wurde nicht gefunden` angezeigt wird, läuft wahrscheinlich noch ein älterer Deployment-Stand. Die Dateien im GitHub-Repository werden durch einen Commit **nicht automatisch** in Firebase bereitgestellt.
+
+Im Browser-Cloud-Shell-Terminal kann der aktuelle Stand ohne lokalen PC-Ordner bereitgestellt werden:
+
+```bash
+git clone https://github.com/HannoNuppi/Tobiservices-Account.git
+cd Tobiservices-Account
+npm install -g firebase-tools
+firebase login --no-localhost
+firebase deploy --project tobiservices --only functions,firestore
+```
+
+Cloud Functions benötigen die passenden Projektberechtigungen und den von Firebase geforderten Abrechnungstarif. Nach dem Deploy die Seite neu laden. Wenn das Backend weiterhin fehlschlägt, den im Admin Center angezeigten Fehlercode und die Cloud-Functions-Logs prüfen.
+
 ## Admin Center
 
 Das Admin Center unterstützt:
