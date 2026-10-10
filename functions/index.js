@@ -375,6 +375,9 @@ exports.listTobiUsers = onCall(async (request) => {
   const users = await Promise.all(authUsers.map(async user => {
     const profileSnap = await db.doc("users/" + user.uid).get();
     const profile = profileSnap.exists ? (profileSnap.data() || {}) : {};
+    const legacySnap = profile.authProvider
+      ? null
+      : await db.collection("tobiAccounts").where("uid", "==", user.uid).limit(1).get();
     return {
       uid: user.uid,
       email: user.email || profile.email || "",
@@ -384,7 +387,7 @@ exports.listTobiUsers = onCall(async (request) => {
       goldCoins: Number.isSafeInteger(profile.goldCoins) && profile.goldCoins >= 0 ? profile.goldCoins : 0,
       disabled: Boolean(user.disabled || profile.disabled),
       createdAt: profile.createdAt || user.metadata.creationTime || null,
-      authProvider: profile.authProvider || (accountSnap.empty ? "firebase-auth" : "tobi-legacy")
+      authProvider: profile.authProvider || (legacySnap && !legacySnap.empty ? "tobi-legacy" : "firebase-auth")
     };
   }));
 
