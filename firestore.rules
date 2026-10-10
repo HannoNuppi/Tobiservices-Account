@@ -36,20 +36,29 @@ service cloud.firestore {
         && request.resource.data.goldCoins == 0
         && request.resource.data.authProvider == 'firebase-auth';
 
-      // Admins can change tags and service-level disabled state, but not the
-      // shared gold coin balance. A profile owner may initialize a missing
-      // goldCoins field to 0 once; afterward nobody can write that field here.
+      // Admins can manage tags, service access and existing coin balances.
+      // An admin's own admin tag cannot be removed, even by a direct client write.
+      // Only the signed-in admin may toggle their own maintenance bypass.
       allow update: if (
         isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'tags', 'disabled', 'lastProfileChangeAt', 'email',
-          'displayName', 'username', 'authProvider'
+          'displayName', 'username', 'authProvider', 'goldCoins',
+          'maintenanceBypass'
         ])
         && (uid != request.auth.uid
           || (request.resource.data.tags is list
             && request.resource.data.tags.hasAny(['admin'])
             && (!('disabled' in request.resource.data)
               || request.resource.data.disabled != true)))
+        && (!('goldCoins' in request.resource.data)
+          || (request.resource.data.goldCoins is int
+            && request.resource.data.goldCoins >= 0
+            && request.resource.data.goldCoins <= 9007199254740991))
+        && (!('maintenanceBypass' in request.resource.data)
+          || request.resource.data.maintenanceBypass is bool)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['maintenanceBypass'])
+          || uid == request.auth.uid)
       ) || (
         ownProfile(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goldCoins'])
