@@ -22,6 +22,9 @@
 .maintenance-box{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;margin-top:12px}
 .maintenance-toggle{display:flex;align-items:center;gap:10px;font-weight:700}
 .maintenance-toggle input{width:20px;height:20px;accent-color:#ff3ea8}
+.coin-actions{align-items:flex-end}
+.coin-actions label{display:flex;align-items:center;gap:8px;flex:1 1 220px;color:var(--muted);font-size:12px}
+.coin-actions .coinInput{max-width:190px}
 </style>
 </head>
 <body class="jd-page">
@@ -92,7 +95,7 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
+import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore,collection,getDocs,doc,getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -146,7 +149,7 @@ function renderUsers(){
     return "<div class=\"jd-card\" data-uid=\""+escapeHtml(u.uid)+"\">"+
       "<div style=\"display:flex;gap:10px\"><input class=\"check\" type=\"checkbox\" "+(selected.has(u.uid)?"checked":"")+"><div>"+
       "<h3 class=\"username\"></h3><p class=\"uname\"></p><div class=\"mono uid\"></div></div></div>"+
-      "<div class=\"chips\"></div><div class=\"actions\">"+
+      "<div class=\"chips\"></div><div class=\"actions coin-actions\"><label>Goldmünzen <input class=\"jd-input coinInput\" type=\"number\" min=\"0\" max=\"9007199254740991\" step=\"1\" inputmode=\"numeric\"></label><button class=\"jd-btn-ghost\" data-save-coins>Saldo speichern</button></div><div class=\"actions\">"+
       "<input class=\"jd-input tagInput\" maxlength=\"24\" placeholder=\"Tag hinzufügen\">"+
       "<button class=\"jd-btn-ghost\" data-add>Hinzufügen</button>"+
       "<button class=\"jd-btn-ghost\" data-copy>UID kopieren</button>"+
@@ -160,9 +163,15 @@ function renderUsers(){
     card.querySelector(".username").textContent=u.displayName||u.email||"(ohne Namen)";
     card.querySelector(".uname").textContent=u.email||u.username||"(keine E-Mail)";
     card.querySelector(".uid").textContent=u.uid;
+    card.querySelector(".coinInput").value=String(Number.isSafeInteger(u.goldCoins)&&u.goldCoins>=0?u.goldCoins:0);
     (Array.isArray(u.tags)?u.tags:[]).forEach(function(tag){
-      const chip=document.createElement("span");chip.className="chip";chip.textContent=tag+" ";
-      const b=document.createElement("button");b.dataset.rm=tag;b.textContent="×";chip.appendChild(b);card.querySelector(".chips").appendChild(chip);
+      const chip=document.createElement("span");chip.className="chip";chip.append(tag+" ");
+      if(tag==="admin"&&u.uid===auth.currentUser?.uid){
+        const lock=document.createElement("span");lock.textContent="🔒";lock.title="Dein eigener Admin-Tag ist geschützt";chip.appendChild(lock);
+      }else{
+        const b=document.createElement("button");b.dataset.rm=tag;b.textContent="×";b.setAttribute("aria-label","Tag "+tag+" entfernen");chip.appendChild(b);
+      }
+      card.querySelector(".chips").appendChild(chip);
     });
   });
   $("#selectedCount").textContent=selected.size+" ausgewählt";
@@ -238,14 +247,25 @@ $("#userList").addEventListener("click",async function(e){
   const card=e.target.closest("[data-uid]");if(!card)return;
   const u=users.find(function(x){return x.uid===card.dataset.uid;});if(!u)return;
   if(e.target.matches("input[type=checkbox]")){if(e.target.checked)selected.add(u.uid);else selected.delete(u.uid);renderUsers();return;}
-  const button=e.target.closest("[data-add],[data-rm],[data-copy],[data-toggle]");if(!button)return;
+  const button=e.target.closest("[data-add],[data-rm],[data-copy],[data-toggle],[data-save-coins]");if(!button)return;
   try{
-    if(button.dataset.copy){await navigator.clipboard.writeText(u.uid);jdToast("UID kopiert");return;}
-    if(button.dataset.toggle){await setDisabled(u.uid,!u.disabled);u.disabled=!u.disabled;renderUsers();jdToast(u.disabled?"TobiServices-Zugriff gesperrt":"TobiServices-Zugriff freigegeben");return;}
+    if(button.hasAttribute("data-save-coins")){
+      const input=card.querySelector(".coinInput");
+      const raw=input.value.trim();
+      const amount=Number(raw);
+      if(raw===""||!Number.isSafeInteger(amount)||amount<0)return jdToast("Bitte eine nicht-negative ganze Zahl für Goldmünzen eingeben.");
+      await setGoldCoins(u.uid,amount);
+      u.goldCoins=amount;
+      renderUsers();
+      jdToast("Goldmünzen-Kontostand gespeichert.");
+      return;
+    }
+    if(button.hasAttribute("data-copy")){await navigator.clipboard.writeText(u.uid);jdToast("UID kopiert");return;}
+    if(button.hasAttribute("data-toggle")){await setDisabled(u.uid,!u.disabled);u.disabled=!u.disabled;renderUsers();jdToast(u.disabled?"TobiServices-Zugriff gesperrt":"TobiServices-Zugriff freigegeben");return;}
     let tags=Array.isArray(u.tags)?[...u.tags]:[];
     if(button.dataset.rm){
       const tag=button.dataset.rm;
-      if(tag==="admin"&&u.uid===auth.currentUser?.uid)return jdToast("Eigenen Admin-Tag bitte nicht entfernen.");
+      if(tag==="admin"&&u.uid===auth.currentUser?.uid)return jdToast("Dein eigener Admin-Tag ist geschützt.");
       tags=tags.filter(function(x){return x!==tag;});
     }else{
       const tag=button.parentElement.querySelector(".tagInput").value.toLowerCase().trim().replace(/[^a-z0-9äöüß_-]+/g,"-").slice(0,24);
