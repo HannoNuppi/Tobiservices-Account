@@ -53,7 +53,7 @@ onUser((user,profile)=>{
   document.getElementById("name").textContent=user.displayName||profile.displayName||user.email||"TobiServices";
   document.getElementById("email").textContent=accountEmail||"(nicht verfügbar)";
   document.getElementById("uid").textContent=user.uid;
-  const goldCoins=Number.isSafeInteger(profile.goldCoins)&&profile.goldCoins>=0?profile.goldCoins:0;
+  const goldCoins=Number.isSafeInteger(profile.goldCoins)&&Number.isSafeInteger(profile.goldCoins)?profile.goldCoins:0;
   document.getElementById("goldCoins").textContent=goldCoins.toLocaleString("de-DE");
 
   const tagBox=document.getElementById("tags");
