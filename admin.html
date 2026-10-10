@@ -33,7 +33,7 @@
 
   <section class="jd-card" id="createCard" style="margin-top:16px;display:none">
     <h3>Firebase-Accounts</h3>
-    <p>Neue Accounts werden direkt in Firebase Console → Authentication angelegt. Alle dort vorhandenen Konten werden hier angezeigt; dieser Bereich verwaltet ausschließlich Tags und Status, keine separaten TobiServices-Passwörter.</p>
+    <p>Accounts werden in Firebase Authentication angelegt und erscheinen hier, sobald sie sich einmal angemeldet und ihr TobiServices-Profil erstellt haben. Im kostenlosen Spark-Betrieb verwaltet dieses Center Profil-Tags und den TobiServices-Dienstzugriff; es deaktiviert keine Firebase-Auth-Anmeldung selbst.</p>
   </section>
 
   <section class="jd-card" id="accountsCard" style="margin-top:14px;display:none">
@@ -106,17 +106,17 @@ function escapeHtml(v){
   });
 }
 function backendErrorMessage(error){
-  const code=String(error?.code||"").replace(/^functions\//,"");
+  const code=String(error?.code||"").replace(/^(functions|firestore)\//,"");
   const message=String(error?.message||"").trim();
   const known={
-    "not-found":"Die Backend-Funktion wurde nicht gefunden. Vermutlich sind die aktuellen Cloud Functions noch nicht bereitgestellt.",
-    "permission-denied":"Der Server verweigert den Zugriff. Prüfe im Firebase-Profil users/{UID}, ob tags das Element admin enthält.",
-    "unauthenticated":"Die Anmeldung ist abgelaufen. Bitte melde dich erneut an.",
-    "unavailable":"Cloud Functions sind momentan nicht erreichbar. Prüfe Bereitstellung, Netzwerk und Firebase-Projekt.",
-    "failed-precondition":"Die Backend-Voraussetzungen sind nicht erfüllt. Prüfe den Firebase-Projektstatus und die Cloud-Functions-Konfiguration.",
-    "internal":"Die Backend-Funktion ist intern fehlgeschlagen. Prüfe die Firebase-Functions-Logs."
+    "permission-denied":"Firestore hat den Vorgang abgelehnt. Prüfe, ob dein Profil users/{UID} den Tag admin enthält und die neuen Firestore-Regeln veröffentlicht sind.",
+    "unauthenticated":"Deine Anmeldung ist abgelaufen. Bitte melde dich erneut an.",
+    "unavailable":"Firestore ist gerade nicht erreichbar. Prüfe deine Verbindung und den Firebase-Status.",
+    "not-found":"Das Account-Profil wurde noch nicht angelegt. Der Nutzer muss sich einmal bei TobiServices anmelden.",
+    "failed-precondition":"Die Firestore-Voraussetzungen sind nicht erfüllt. Prüfe die Datenbankeinrichtung.",
+    "legacy-login-requires-cloud-functions":"Alte Username/Passwort-Konten benötigen das frühere Cloud-Functions-Backend."
   };
-  return known[code] || ("Backendfehler"+(code?" ("+code+")":"")+(message?": "+message:""));
+  return known[code] || ("Firestore-Fehler"+(code?" ("+code+")":"")+(message?": "+message:""));
 }
 function renderStats(){
   $("#count").textContent=users.length;
@@ -182,7 +182,7 @@ $("#userList").addEventListener("click",async function(e){
   const button=e.target.closest("[data-add],[data-rm],[data-copy],[data-toggle]");if(!button)return;
   try{
     if(button.dataset.copy){await navigator.clipboard.writeText(u.uid);jdToast("UID kopiert");return;}
-    if(button.dataset.toggle){await setDisabled(u.uid,!u.disabled);u.disabled=!u.disabled;renderUsers();jdToast(u.disabled?"Account deaktiviert":"Account aktiviert");return;}
+    if(button.dataset.toggle){await setDisabled(u.uid,!u.disabled);u.disabled=!u.disabled;renderUsers();jdToast(u.disabled?"TobiServices-Zugriff gesperrt":"TobiServices-Zugriff freigegeben");return;}
     let tags=Array.isArray(u.tags)?[...u.tags]:[];
     if(button.dataset.rm){
       const tag=button.dataset.rm;
