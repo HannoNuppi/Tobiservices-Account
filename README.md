@@ -1,11 +1,11 @@
 # TobiServices Account Center (Firebase Spark)
 
-Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Account Center und Admin-Oberfläche nutzen Firebase Authentication und Firestore. Die JDNEXT-Münzautomatik benötigt zusätzlich die bereitgestellten Cloud Functions und einen Firebase-Blaze-Tarif.
+Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Account Center, Admin-Oberfläche und die JDNEXT-Münzlogik verwenden Firebase Authentication, Firestore und streng geprüfte Firestore-Regeln. Die Münzlogik für textbasierte Hausaufgaben benötigt keine Cloud Functions und keinen Blaze-Tarif.
 
 ## Einmalige Einrichtung ohne Terminal
 
 1. Öffne die [Firebase Console](https://console.firebase.google.com/) und wähle das Projekt `tobiservices`.
-2. Unter **Authentication → Sign-in method** muss **E-Mail/Passwort** aktiviert sein. Neue Nutzer legst du unter **Authentication → Users** an.
+2. Unter **Authentication → Sign-in method** müssen **E-Mail/Passwort** und **Anonym** aktiviert sein. Anonyme Sitzungen ermöglichen Hausaufgaben posten und melden ohne TobiServices-Account. Neue Nutzer legst du unter **Authentication → Users** an.
 3. Öffne **Firestore Database → Rules**.
 4. Ersetze dort die Regeln durch den Inhalt von [`firestore.rules`](https://github.com/HannoNuppi/Tobiservices-Account/blob/main/firestore.rules) und klicke auf **Publish**. Diese Schritte benötigen kein lokales Projektverzeichnis und keinen Cloud-Functions-Deploy.
 5. Öffne das Admin Center neu und melde dich mit dem Konto an, dessen Dokument `users/{UID}` bereits `tags: ["admin"]` hat.
@@ -48,7 +48,7 @@ Die UID des Dokuments muss exakt zur Firebase-Authentication-UID gehören. Beisp
 }
 ```
 
-`users/{uid}.goldCoins` ist das gemeinsame Guthaben über alle TobiServices-Dienste. Es ist eine sichere ganze Zahl und darf bei Moderationsstrafen negativ werden. Normale Kontoinhaber dürfen ein fehlendes Guthabenfeld nur einmalig auf `0` initialisieren; bestehende Guthaben dürfen nicht clientseitig verändert werden. Nur Admins können den Saldo im Admin Center ändern. JDNEXT vergibt serverseitig `+10` pro veröffentlichtem Hausaufgabeneintrag und zieht bei Entfernung nach zwei verschiedenen Meldungen `20` Münzen ab.
+`users/{uid}.goldCoins` ist das gemeinsame Guthaben über alle TobiServices-Dienste. Es ist eine sichere ganze Zahl und darf bei Moderationsstrafen negativ werden. Normale Kontoinhaber dürfen ein fehlendes Guthabenfeld nur einmalig auf `0` initialisieren; bestehende Guthaben dürfen nicht frei verändert werden. Nur Admins können den Saldo im Admin Center beliebig ändern. Bei JDNEXT wird `+10` in derselben atomaren Firestore-Transaktion wie ein neuer Homework-Eintrag gutgeschrieben; eine Löschung nach zwei eindeutigen Meldungen wird regelbasiert mit `−20` verknüpft.
 
 ### `siteSettings/jdnext`
 
@@ -58,28 +58,24 @@ Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt, Änderungen dürfen n
 
 Die alte Username/Passwort-Collection bleibt für Browser vollständig gesperrt.
 
-## JDNEXT-Münzen und automatische Kontosperre
+## JDNEXT-Münzen und Moderation ohne Blaze
 
-Für die automatische Vergabe und den Abzug wird ein serverseitiger Aufruf zwischen den Cloud Functions beider Firebase-Projekte verwendet. Der gemeinsame Schlüssel darf **nicht** im HTML, in GitHub oder in Firestore stehen. Lege einen langen zufälligen Wert fest und trage exakt denselben Wert in beiden Projekten ein:
+Neue JDNEXT-Hausaufgaben liegen im TobiServices-Firestore-Projekt unter `jdnextHomework/{hwKey}/entries/{entryId}`. Die private Zuordnung zum Autor liegt unter `jdnextHomeworkPrivate/{hwKey}/entries/{entryId}` und ist regulär nicht lesbar. Ein Münzereignis wird unter `jdnextCoinEvents/{eventId}` gespeichert; diese Ereignisse sind nicht clientseitig lesbar, änderbar oder löschbar.
 
-```bash
-# Projekt tobiservices
-firebase use tobiservices
-firebase functions:secrets:set JDNEXT_REWARD_SECRET
-firebase deploy --only functions,firestore:rules
+- Posten und melden funktioniert ohne TobiServices-Konto. Solche Einträge bekommen keinen Kontobonus.
+- Ein angemeldeter, nicht gesperrter TobiServices-Account erhält `+10` zusammen mit dem neuen Eintrag in einem Firestore-Commit.
+- Pro Firebase-Identität gibt es höchstens eine Meldung je Eintrag. Zwei verschiedene Identitäten erhöhen den Meldungszähler auf zwei; danach können Eintrag, private Zuordnung und die `−20`-Buchung nur als zusammengehöriger, von Rules geprüfter Commit entfernt werden.
+- Bei `goldCoins <= -50` wird `users/{uid}.disabled = true` gesetzt. Das Konto und sein Guthaben werden nicht gelöscht.
 
-# Projekt next-untis-plus
-firebase use next-untis-plus
-firebase functions:secrets:set TOBI_REWARD_SECRET
-firebase deploy --only functions,firestore:rules
-```
+**Wichtige Grenze des Spark-Tarifs:** Ohne vertrauenswürdige Serverfunktion kann Firebase Authentication nicht serverseitig auf `disabled=true` gesetzt werden. Diese Lösung sperrt deshalb den TobiServices-Dienstzugriff über das Profilfeld `disabled`; alle angeschlossenen Dienste müssen dieses Feld respektieren. Die Anmeldung selbst kann weiterhin bestehen. Die Regeln verhindern, dass ein Browser den Saldo frei ändert.
 
-Die CLI fragt den Secret-Wert interaktiv ab. Verwende bei beiden Secret-Namen denselben zufälligen Wert. Cloud Functions und Secret Manager benötigen einen Firebase-Blaze-Tarif. Die bestehende Website bleibt statisch erreichbar; ohne veröffentlichte Functions sind die serverseitigen Münzfunktionen aber nicht aktiv.
+### Aktivieren
 
-- Hausaufgaben posten und melden benötigt weiterhin **kein TobiServices-Konto**.
-- Ein verifiziert angemeldeter TobiServices-Account erhält `+10` beim Posten.
-- Zwei Meldungen von unterschiedlichen anonymen JDNEXT-Identitäten entfernen den Eintrag; wenn sein Autor ein TobiServices-Konto hatte, werden `20` Münzen abgezogen.
-- Bei einem Guthaben von `-50` oder weniger wird der Firebase-Authentication-Account gesperrt und das Profil bleibt zur Wiederherstellung erhalten. Es wird nichts gelöscht.
+1. Öffne Firebase Console → Projekt `tobiservices` → Authentication → Sign-in method und aktiviere **Anonym** zusätzlich zu E-Mail/Passwort.
+2. Öffne Firestore Database → Rules, übernimm `firestore.rules` aus diesem Repository und klicke auf **Publish**.
+3. Für den reinen Text-Hausaufgaben-, Meldungs- und Münzablauf ist kein Cloud-Functions-Deploy und kein Secret nötig.
+
+Die bestehende Discord-Bild-Upload-Funktion von JDNEXT ist davon getrennt und verwendet weiterhin eine Cloud Function; sie braucht weiterhin die dafür beschriebene Functions-Einrichtung.
 
 ## Einschränkungen ohne Blaze
 
@@ -89,4 +85,4 @@ GitHub Pages liefert statische Dateien aus. Ein clientseitiger Beta-Bildschirm i
 
 ## GitHub Pages
 
-Die Website-Dateien werden bei aktivierter GitHub-Pages-Konfiguration von `main` veröffentlicht. Das grundlegende Account Center funktioniert mit Firebase Authentication und Firestore; für JDNEXT-Münzboni, Moderationsabzüge und die automatische Auth-Sperre müssen die oben beschriebenen Cloud Functions auf Blaze deployed sein. Die Firestore-Regeln in beiden Projekten müssen ebenfalls veröffentlicht werden.
+Die Website-Dateien werden bei aktivierter GitHub-Pages-Konfiguration von `main` veröffentlicht. Die textbasierte Hausaufgaben-, Report- und Münzlogik benötigt nur die veröffentlichte `firestore.rules` dieses Repositorys und aktiviert Anonym-Auth. Nur die getrennte Discord-Bildfunktion braucht weiterhin Cloud Functions.
