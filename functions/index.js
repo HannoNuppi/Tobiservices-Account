@@ -235,7 +235,7 @@ exports.ensureUserProfile = onCall(async (request) => {
       authProvider: "firebase-auth"
     }).catch(async error => {
       // A concurrent login may have created the profile after our read.
-      if (error.code !== 6 && error.code !== "already-exists") throw error;
+      if (String(error.code) !== "6" && String(error.code) !== "already-exists") throw error;
     });
   } else {
     const existing = profileSnap.data() || {};
