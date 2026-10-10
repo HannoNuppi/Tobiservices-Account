@@ -127,7 +127,9 @@ export async function getProfile(uid = auth.currentUser?.uid) {
 
 export function onUser(callback) {
   return onAuthStateChanged(auth, async user => {
-    if (!user) {
+    // Anonyme JDNEXT-Sitzungen dürfen posten und melden, sind aber kein
+    // angemeldeter TobiServices-Account und sollen den Login nicht blockieren.
+    if (!user || user.isAnonymous) {
       callback(null, null);
       return;
     }
