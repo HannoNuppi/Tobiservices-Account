@@ -1,51 +1,51 @@
 # Firebase-Datenstruktur – TobiServices
 
-Diese Struktur wird vom Backend verwaltet. Firestore ist schemafrei: Eine Collection wird sichtbar, sobald ein echtes Dokument darin angelegt wird. Beim ersten Start der Cloud-Functions-Runtime legt das Backend `system/schema` und – falls nicht vorhanden – `siteSettings/jdnext` an. Die tatsächlichen Account-Dokumente entstehen erst bei erfolgreicher Account-Erstellung.
+Neue Nutzer werden direkt in **Firebase Authentication** mit E-Mail und Passwort angelegt. Beim ersten authentifizierten Login legt die Cloud Function `ensureUserProfile` ein Profil in Firestore an, sofern es noch keines gibt. Neue Profile erhalten keine Rollen.
 
-## 1. `tobiAccounts/{usernameKey}`
+## 1. Firebase Authentication
 
-Wird vom Backend bei der Erstellung eines Accounts erzeugt. Der Admin ist ein normaler TobiServices-Account mit dem Tag `admin`.
-
-Beispielstruktur (nur zur Ansicht; nicht manuell anlegen):
-
-```json
-{
-  "username": "beispieladmin",
-  "usernameKey": "beispieladmin",
-  "displayName": "Beispiel Admin",
-  "uid": "tobi_<vom Backend erzeugte UID>",
-  "tags": ["admin"],
-  "disabled": false,
-  "salt": "<vom Backend zufällig erzeugter Base64-Wert>",
-  "passwordHash": "<vom Backend berechneter scrypt-Hash>",
-  "passwordVersion": 1,
-  "kdf": "scrypt-N32768-r8-p1",
-  "createdAt": "<Firestore Timestamp>",
-  "updatedAt": "<Firestore Timestamp>"
-}
-```
-
-**Nicht manuell einfügen:** `uid`, `salt` und `passwordHash` müssen zum Firebase-Authentication-Konto bzw. zum eingegebenen Passwort passen. Sie werden gemeinsam durch `bootstrapTobiAdmin` erzeugt. Der sichere Weg ist, den Bootstrap-Vorgang zu benutzen.
+Lege Nutzer im Firebase Console-Bereich **Authentication → Users** an. Firebase verwaltet ihre UID, E-Mail-Adresse, Passwortanmeldung und den Kontostatus. Die UID ist der Schlüssel zu ihrem Rollenprofil in Firestore.
 
 ## 2. `users/{uid}`
 
-Öffentliches/sicher begrenztes Profil für die angemeldete Person:
+Profil- und Tag-Dokument. Die Dokument-ID muss exakt mit der Firebase-Authentication-UID übereinstimmen.
 
 ```json
 {
-  "username": "beispieladmin",
-  "displayName": "Beispiel Admin",
-  "tags": ["admin"],
+  "email": "person@example.com",
+  "displayName": "Beispiel",
+  "tags": [],
+  "authProvider": "firebase-auth",
   "createdAt": "<Firestore Timestamp>",
   "lastProfileChangeAt": "<Firestore Timestamp>"
 }
 ```
 
-Auch dieses Dokument erstellt das Backend automatisch. `{uid}` muss exakt der vom Backend erzeugten Firebase-Authentication-UID entsprechen.
+Feldbedeutung:
 
-## 3. `siteSettings/jdnext`
+- `email`: Firebase-Auth-E-Mail-Adresse
+- `displayName`: Anzeigename
+- `tags`: Array aus Strings, zum Beispiel `["admin"]`
+- `authProvider`: Kennzeichnung des neuen Auth-Weges
+- `createdAt`, `lastProfileChangeAt`: Firestore-Timestamps
 
-Wird beim ersten Start der Cloud-Functions-Runtime mit Standardwerten angelegt. Der Admin-Bereich aktualisiert danach diesen Datensatz:
+**Nicht vom Browser beschreiben lassen.** Die Firestore-Regeln verweigern Client-Schreibzugriffe auf `users`. Die vertrauenswürdigen Cloud Functions erstellen Profile und ändern Tags.
+
+## 3. Ersten Admin einmalig einrichten
+
+Kein Bootstrap-Key wird gebraucht. Nutze die Firebase Console mit deinem vertrauenswürdigen Projekt-Owner-Konto:
+
+1. Unter Authentication → Users das eigene Konto auswählen und die vollständige UID kopieren.
+2. Unter Firestore Database die Collection `users` und das Dokument mit der ID dieser UID öffnen. Wenn es noch nicht existiert, ein Dokument mit genau dieser UID anlegen.
+3. `email` als String, `displayName` als String und `tags` als Array mit dem einzigen String `admin` setzen. Beim neuen Dokument zusätzlich `createdAt` und `lastProfileChangeAt` als Timestamps eintragen.
+
+Wenn das Profil bereits besteht, ändere nur das `tags`-Feld und bewahre andere Felder auf. Danach kannst du Admin-Tags im Admin Center verwalten.
+
+Eine öffentliche, unangemeldete Funktion zum Vergeben von Admin-Rechten ist absichtlich nicht vorgesehen. Jede weitere Rollenänderung wird durch eine Cloud Function geprüft, die die angemeldete UID und deren bereits vorhandenen `admin`-Tag überprüft.
+
+## 4. `siteSettings/jdnext`
+
+Wartungsstatus für die JDNEXT-Website:
 
 ```json
 {
@@ -55,17 +55,16 @@ Wird beim ersten Start der Cloud-Functions-Runtime mit Standardwerten angelegt. 
 }
 ```
 
-## 4. `system/schema`
+Lesen darf öffentlich möglich sein; Schreiben erfolgt nur über die geschützte Admin-Cloud-Function.
 
-Wird vom Backend als Schema-Hinweis angelegt. Er beschreibt Feldnamen und Typen; er ist kein Account und sollte nicht manuell bearbeitet werden.
+## 5. `tobiAccounts/{usernameKey}` (Legacy)
 
-## 5. Bootstrap-Schlüssel
+Diese Collection kann ältere Username/Passwort-Konten enthalten. Passwort-Hash und Salt werden serverseitig gehalten und sind durch Firestore-Regeln gesperrt. Neue Firebase-E-Mail-Konten benötigen keinen Eintrag in dieser Collection. Bei noch bestehenden Legacy-Konten synchronisiert die Tag-Funktion die Tags soweit ein entsprechender Legacy-Eintrag vorhanden ist.
 
-Der geheime Wert wird **nicht** in einer Firestore-Collection gespeichert.
+## 6. Deployment-Hinweis
 
-- Firebase-Projekt: `tobiservices`
-- Secret-Name: `TOBI_BOOTSTRAP_KEY`
-- Speicherort: Firebase/Google Cloud Secret Manager
-- Wert: selbst gewählter, zufälliger geheimer Text
+Nach Code-Änderungen:
 
-Der Secret-Name ist nicht der geheime Wert. Den echten Wert gibst du beim ersten Admin-Bootstrap ein. Nach Erstellung des ersten Admins wird dieser Bootstrap-Endpunkt gesperrt.
+`firebase deploy --only functions,firestore`
+
+Firebase kann dabei nachfragen, ob die nicht mehr verwendete Function `bootstrapTobiAdmin` gelöscht werden soll. Bestätige diese Entfernung, damit der alte Bootstrap-Key-Endpunkt nicht als bereits deployte Function weiterläuft.
