@@ -93,9 +93,24 @@ export async function getProfile(uid = auth.currentUser?.uid) {
   if (!uid) return null;
 
   const snap = await getDoc(doc(db, "users", uid));
-  if (snap.exists()) return { uid, ...snap.data() };
+  if (snap.exists()) {
+    const profile = { uid, ...snap.data() };
+    if (Number.isSafeInteger(profile.goldCoins) && profile.goldCoins >= 0) {
+      return profile;
+    }
 
-  // Existing Firebase Authentication users may predate the tag-profile system.
+    // Backfill old profiles with the shared balance field through the trusted
+    // server function. If the new function has not been deployed yet, keep the
+    // account usable and show 0 until the backend can persist the default.
+    try {
+      const result = await ensureUserProfileCall({});
+      return result.data?.profile || { ...profile, goldCoins: 0 };
+    } catch (error) {
+      console.warn("Shared gold coin balance could not be initialized yet:", error);
+      return { ...profile, goldCoins: 0 };
+    }
+  }
+
   // The callable creates only a no-privilege profile; it cannot set admin tags.
   const result = await ensureUserProfileCall({});
   return result.data?.profile || null;
