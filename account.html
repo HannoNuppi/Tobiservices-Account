@@ -49,7 +49,7 @@ onUser((user,profile)=>{
     +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
     +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
 
-  document.getElementById("name").textContent=user.displayName||profile.displayName||"TobiServices";
+  document.getElementById("name").textContent=user.displayName||profile.displayName||user.email||"TobiServices";
   document.getElementById("email").textContent=accountEmail||"(nicht verfügbar)";
   document.getElementById("uid").textContent=user.uid;
 
