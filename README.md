@@ -39,7 +39,7 @@ Cloud Functions für Firebase benötigen aktuell den Blaze-Tarif.
 
 ## Firebase-Datenstruktur
 
-Das Backend legt bei der ersten Admin-Einrichtung die Schema-Referenz `system/schema` und – falls sie noch fehlt – `siteSettings/jdnext` mit Standardwerten an. Der echte Admin wird in diesem Schritt gleichzeitig in `tobiAccounts/{usernameKey}` und `users/{uid}` angelegt.
+Beim ersten Start der Cloud-Functions-Runtime legt das Backend die Schema-Referenz `system/schema` und – falls sie noch fehlt – `siteSettings/jdnext` mit Standardwerten an. Der echte Admin wird bei der erstmaligen Bootstrap-Erstellung in `tobiAccounts/{usernameKey}` und `users/{uid}` angelegt.
 
 **Bitte Admin-Accounts nicht manuell in Firestore anlegen.** Die Firebase-Authentication-UID und der scrypt-Passwort-Hash müssen zusammenpassen; das erledigt das Bootstrap-Backend. Der Secret-Wert `TOBI_BOOTSTRAP_KEY` wird ausschließlich in Firebase/Google Cloud Secret Manager gespeichert.
 
