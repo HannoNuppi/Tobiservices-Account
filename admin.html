@@ -106,7 +106,7 @@ function escapeHtml(v){
   });
 }
 function backendErrorMessage(error){
-  const code=String(error?.code||"").replace(/^functions\\//,"");
+  const code=String(error?.code||"").replace(/^functions\//,"");
   const message=String(error?.message||"").trim();
   const known={
     "not-found":"Die Backend-Funktion wurde nicht gefunden. Vermutlich sind die aktuellen Cloud Functions noch nicht bereitgestellt.",
