@@ -42,6 +42,7 @@ onUser((user,profile)=>{
     "<div class=\"jd-card\">"
     +"<h3 id=\"name\"></h3>"
     +"<p>TobiServices Account</p>"
+    +(profile.disabled===true?"<div style=\"margin:12px 0;padding:12px;border:1px solid rgba(255,62,120,.65);border-radius:12px;background:rgba(255,62,120,.09);color:var(--text);font-size:13px;line-height:1.5\"><strong>Account auf Dienstebene gesperrt</strong><br>Dein Konto bleibt erhalten. Verbundene TobiServices-Dienste sollen diesen Sperrstatus beachten. Im Spark-Tarif kann die Anmeldung selbst nicht automatisch deaktiviert werden.</div>":"")
     +"<div class=\"wallet-balance\"><div class=\"wallet-coin-icon\" aria-hidden=\"true\">✦</div><div class=\"wallet-copy\"><span>GOLDMÜNZEN</span><strong id=\"goldCoins\">0</strong><small>Gemeinsames Guthaben über alle TobiServices-Dienste</small></div></div>"
     +"<div style=\"margin-top:16px\"><div style=\"font-size:12px;color:var(--muted);margin-bottom:7px\">Tags</div><div id=\"tags\" style=\"display:flex;gap:8px;flex-wrap:wrap\"></div></div>"
     +"<div style=\"margin-top:16px;font-size:11px;color:var(--muted)\">E-Mail-Adresse<div id=\"email\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
@@ -53,7 +54,7 @@ onUser((user,profile)=>{
   document.getElementById("name").textContent=user.displayName||profile.displayName||user.email||"TobiServices";
   document.getElementById("email").textContent=accountEmail||"(nicht verfügbar)";
   document.getElementById("uid").textContent=user.uid;
-  const goldCoins=Number.isSafeInteger(profile.goldCoins)&&Number.isSafeInteger(profile.goldCoins)?profile.goldCoins:0;
+  const goldCoins=Number.isSafeInteger(profile.goldCoins)?profile.goldCoins:0;
   document.getElementById("goldCoins").textContent=goldCoins.toLocaleString("de-DE");
 
   const tagBox=document.getElementById("tags");
