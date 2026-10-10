@@ -65,6 +65,7 @@ service cloud.firestore {
         && ownerAfter.data.authorTobiUid == uid
         && exists(userPath(uid))
         && (!('disabled' in profileBefore.data) || profileBefore.data.disabled != true)
+        && profileBefore.data.goldCoins > -50
         && profileAfter.data.goldCoins == profileBefore.data.goldCoins + 10
         && profileAfter.data.lastJdnextCoinEventId == eventId
         && profileAfter.data.lastProfileChangeAt == request.time;
@@ -154,6 +155,7 @@ service cloud.firestore {
         && ownerAfter.data.authorTobiUid == d.uid
         && exists(userPath(d.uid))
         && (!('disabled' in profileBefore.data) || profileBefore.data.disabled != true)
+        && profileBefore.data.goldCoins > -50
         && profileAfter.data.goldCoins == profileBefore.data.goldCoins + 10
         && profileAfter.data.lastJdnextCoinEventId == eventId
         && profileAfter.data.lastProfileChangeAt == request.time;
@@ -337,7 +339,8 @@ service cloud.firestore {
     }
 
     match /jdnextHomeworkPrivate/{hwKey}/entries/{entryId} {
-      allow get: if exists(homeworkPath(hwKey, entryId))
+      allow get: if signedIn()
+        && exists(homeworkPath(hwKey, entryId))
         && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2;
       allow list: if false;
       allow create: if signedIn()
