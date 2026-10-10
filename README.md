@@ -56,6 +56,7 @@ Profil für ein Firebase-Authentication-Konto. Die ID muss exakt der Firebase-Au
   "email": "person@example.com",
   "displayName": "Beispiel",
   "tags": [],
+  "goldCoins": 0,
   "authProvider": "firebase-auth",
   "createdAt": "<Firestore Timestamp>",
   "lastProfileChangeAt": "<Firestore Timestamp>"
@@ -63,6 +64,12 @@ Profil für ein Firebase-Authentication-Konto. Die ID muss exakt der Firebase-Au
 ```
 
 Das Profil wird von `ensureUserProfile` mit leeren Tags angelegt. Admin-Funktionen werden nicht über vom Client übermittelte Tags freigeschaltet, sondern lesen die gespeicherten Tags serverseitig.
+
+### Gemeinsame Goldmünzen
+
+`users/{uid}.goldCoins` ist das gemeinsame Goldmünzen-Guthaben des Kontos für alle TobiServices-Dienste. Es wird als nicht-negative Ganzzahl gespeichert und beginnt bei `0`. Bestehende Profile ohne dieses Feld werden beim Profil-Ladevorgang über `ensureUserProfile` ergänzt. Dienste sollen dieses zentrale Feld verwenden und keinen eigenen Münzestand in lokalen Speicher oder service-spezifische Dokumente legen.
+
+Es ist absichtlich noch keine Funktion zum Verdienen, Gutschreiben oder Ausgeben von Goldmünzen implementiert. Die Clients können `users` nicht beschreiben; spätere Änderungen müssen über vertrauenswürdige, serverseitig autorisierte Funktionen erfolgen.
 
 ### `tobiAccounts/{usernameKey}` (Legacy)
 
