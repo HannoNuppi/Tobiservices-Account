@@ -40,7 +40,7 @@ function showError(error){
   console.error(error);
   const code=error?.code||"";
   if(code.includes("unauthenticated")){
-    return jdToast("Username oder Passwort ist falsch.");
+    return jdToast("E-Mail-Adresse oder Passwort ist falsch.");
   }
   if(code.includes("unavailable") || code.includes("failed-precondition")){
     return jdToast("TobiServices-Server ist noch nicht bereit oder nicht erreichbar.");
@@ -51,18 +51,18 @@ function showError(error){
 function renderLogin(){
   $("#card").innerHTML=`
     <h3>TobiServices Account</h3>
-    <p>Keine E-Mail-Adresse nötig. Verwende deinen von TobiServices angelegten Username und dein Passwort.</p>
+    <p>Melde dich mit einem bestehenden Firebase-Authentication-Konto und deiner E-Mail-Adresse an.</p>
 
     <form id="loginForm" style="display:grid;gap:10px;margin-top:14px">
-      <input class="jd-input" id="username" maxlength="32"
-        placeholder="Username" autocomplete="username" required>
+      <input class="jd-input" id="username" type="email" maxlength="254"
+        placeholder="E-Mail-Adresse" autocomplete="email" required>
       <input class="jd-input" id="password" maxlength="128"
         type="password" placeholder="Passwort" autocomplete="current-password" required>
       <button class="jd-btn" id="loginBtn">Anmelden</button>
     </form>
 
     <p style="font-size:11px;color:var(--muted);margin-top:14px">
-      Accounts werden manuell über das TobiServices-Adminsystem angelegt.
+      Accounts werden direkt in Firebase Authentication verwaltet. Dein Admin-Status kommt aus dem serverseitig geprüften Tag-Profil.
     </p>`;
 
   $("#loginForm").onsubmit=async event=>{
