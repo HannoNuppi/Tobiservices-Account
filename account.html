@@ -37,19 +37,20 @@ onUser((user,profile)=>{
   }
 
   const tags=Array.isArray(profile.tags)?profile.tags:[];
+  const accountEmail=profile.email||user.email||"";
   app.innerHTML=
     "<div class=\"jd-card\">"
     +"<h3 id=\"name\"></h3>"
     +"<p>TobiServices Account</p>"
     +"<div style=\"margin-top:16px\"><div style=\"font-size:12px;color:var(--muted);margin-bottom:7px\">Tags</div><div id=\"tags\" style=\"display:flex;gap:8px;flex-wrap:wrap\"></div></div>"
-    +"<div style=\"margin-top:16px;font-size:11px;color:var(--muted)\">Username<div id=\"username\" class=\"mono\" style=\"margin-top:5px\"></div></div>"
+    +"<div style=\"margin-top:16px;font-size:11px;color:var(--muted)\">E-Mail-Adresse<div id=\"email\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
     +"<div style=\"margin-top:12px;font-size:11px;color:var(--muted)\">Account-ID<div id=\"uid\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
     +"<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-top:18px\">"
     +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
     +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
 
   document.getElementById("name").textContent=user.displayName||profile.displayName||"TobiServices";
-  document.getElementById("username").textContent=profile.username||"(unbekannt)";
+  document.getElementById("email").textContent=accountEmail||"(nicht verfügbar)";
   document.getElementById("uid").textContent=user.uid;
 
   const tagBox=document.getElementById("tags");
