@@ -1,6 +1,6 @@
 # TobiServices Account Center (Firebase Spark)
 
-Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Die Browser-Clients verwenden Firebase Authentication und Firestore direkt, sodass die aktuellen Funktionen **keine Cloud Functions und keinen Blaze-Tarif** benötigen.
+Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Account Center und Admin-Oberfläche nutzen Firebase Authentication und Firestore. Die JDNEXT-Münzautomatik benötigt zusätzlich die bereitgestellten Cloud Functions und einen Firebase-Blaze-Tarif.
 
 ## Einmalige Einrichtung ohne Terminal
 
@@ -48,7 +48,7 @@ Die UID des Dokuments muss exakt zur Firebase-Authentication-UID gehören. Beisp
 }
 ```
 
-`users/{uid}.goldCoins` ist das gemeinsame Guthaben über alle TobiServices-Dienste. Es wird als nicht-negative Ganzzahl gespeichert. Die veröffentlichten Regeln erlauben einem Kontoinhaber nur, ein bislang fehlendes Feld einmalig auf `0` zu initialisieren. Nur Admins können einen bestehenden Kontostand im Admin Center ändern; Firestore-Regeln beschränken diese Änderung serverseitig auf nicht-negative Ganzzahlen. Es gibt noch keine Verdien- oder Ausgabefunktion.
+`users/{uid}.goldCoins` ist das gemeinsame Guthaben über alle TobiServices-Dienste. Es ist eine sichere ganze Zahl und darf bei Moderationsstrafen negativ werden. Normale Kontoinhaber dürfen ein fehlendes Guthabenfeld nur einmalig auf `0` initialisieren; bestehende Guthaben dürfen nicht clientseitig verändert werden. Nur Admins können den Saldo im Admin Center ändern. JDNEXT vergibt serverseitig `+10` pro veröffentlichtem Hausaufgabeneintrag und zieht bei Entfernung nach zwei verschiedenen Meldungen `20` Münzen ab.
 
 ### `siteSettings/jdnext`
 
@@ -57,6 +57,32 @@ Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt, Änderungen dürfen n
 ### `tobiAccounts/{usernameKey}` (Legacy)
 
 Die alte Username/Passwort-Collection bleibt für Browser vollständig gesperrt.
+
+## JDNEXT-Münzen und automatische Kontosperre
+
+Für die automatische Vergabe und den Abzug wird ein serverseitiger Aufruf zwischen den Cloud Functions beider Firebase-Projekte verwendet. Der gemeinsame Schlüssel darf **nicht** im HTML, in GitHub oder in Firestore stehen. Lege einen langen zufälligen Wert fest und trage exakt denselben Wert in beiden Projekten ein:
+
+```bash
+# Projekt tobiservices
+firebase use tobiservices
+firebase functions:secrets:set JDNEXT_REWARD_SECRET
+firebase deploy --only functions
+
+# Projekt next-untis-plus
+firebase use next-untis-plus
+firebase functions:secrets:set TOBI_REWARD_SECRET
+firebase deploy --only functions
+
+# Rules in beiden Projekten veröffentlichen
+firebase deploy --only firestore:rules
+```
+
+Die CLI fragt den Secret-Wert interaktiv ab. Verwende bei beiden Secret-Namen denselben zufälligen Wert. Cloud Functions und Secret Manager benötigen einen Firebase-Blaze-Tarif. Die bestehende Website bleibt statisch erreichbar; ohne veröffentlichte Functions sind die serverseitigen Münzfunktionen aber nicht aktiv.
+
+- Hausaufgaben posten und melden benötigt weiterhin **kein TobiServices-Konto**.
+- Ein verifiziert angemeldeter TobiServices-Account erhält `+10` beim Posten.
+- Zwei Meldungen von unterschiedlichen anonymen JDNEXT-Identitäten entfernen den Eintrag; wenn sein Autor ein TobiServices-Konto hatte, werden `20` Münzen abgezogen.
+- Bei einem Guthaben von `-50` oder weniger wird der Firebase-Authentication-Account gesperrt und das Profil bleibt zur Wiederherstellung erhalten. Es wird nichts gelöscht.
 
 ## Einschränkungen ohne Blaze
 
