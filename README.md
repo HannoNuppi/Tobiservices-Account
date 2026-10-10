@@ -37,6 +37,14 @@ Cloud Functions für Firebase benötigen aktuell den Blaze-Tarif.
 - `functions/package.json` – Backend-Abhängigkeiten
 - `firestore.rules` – geschützte Regeln
 
+## Firebase-Datenstruktur
+
+Das Backend legt bei der ersten Admin-Einrichtung die Schema-Referenz `system/schema` und – falls sie noch fehlt – `siteSettings/jdnext` mit Standardwerten an. Der echte Admin wird in diesem Schritt gleichzeitig in `tobiAccounts/{usernameKey}` und `users/{uid}` angelegt.
+
+**Bitte Admin-Accounts nicht manuell in Firestore anlegen.** Die Firebase-Authentication-UID und der scrypt-Passwort-Hash müssen zusammenpassen; das erledigt das Bootstrap-Backend. Der Secret-Wert `TOBI_BOOTSTRAP_KEY` wird ausschließlich in Firebase/Google Cloud Secret Manager gespeichert.
+
+Siehe [FIREBASE_SCHEMA.md](FIREBASE_SCHEMA.md) für Feldnamen und Beispiele.
+
 ## Admin Center
 
 Das Admin Center unterstützt:
