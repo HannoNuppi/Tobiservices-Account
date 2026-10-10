@@ -21,7 +21,7 @@ const PASSWORD_MIN = 8;
 const MAX_TAGS = 20;
 
 // Erstellt nur Dokumente mit Setup-/Schema-Informationen. Die echten Accounts
-// werden weiterhin ausschließlich durch bootstrapTobiAdmin/createTobiAccount erzeugt.
+// werden neue Konten in Firebase Authentication angelegt; tobiAccounts bleibt für Legacy-Konten.
 async function ensureTobiSetupDocuments() {
   const schemaRef = db.doc("system/schema");
   const maintenanceRef = db.doc("siteSettings/jdnext");
@@ -65,13 +65,6 @@ async function ensureTobiSetupDocuments() {
               createdAt: "timestamp",
               lastProfileChangeAt: "timestamp"
             }
-          }
-        },
-        secrets: {
-          bootstrapKey: {
-            name: "TOBI_BOOTSTRAP_KEY",
-            storage: "Firebase/Google Cloud Secret Manager",
-            storedInFirestore: false
           }
         }
       });
