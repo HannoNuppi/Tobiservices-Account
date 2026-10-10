@@ -53,7 +53,7 @@ service cloud.firestore {
               || request.resource.data.disabled != true)))
         && (!('goldCoins' in request.resource.data)
           || (request.resource.data.goldCoins is int
-            && request.resource.data.goldCoins >= 0
+            && request.resource.data.goldCoins >= -9007199254740991
             && request.resource.data.goldCoins <= 9007199254740991))
         && (!('maintenanceBypass' in request.resource.data)
           || request.resource.data.maintenanceBypass is bool)
