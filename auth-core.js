@@ -20,7 +20,8 @@ import {
   updateDoc,
   serverTimestamp,
   collection,
-  getDocs
+  getDocs,
+  onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export const CONFIG = Object.freeze({
@@ -165,6 +166,7 @@ export async function listUsers() {
       tags: Array.isArray(data.tags) ? data.tags : [],
       goldCoins: Number.isSafeInteger(data.goldCoins) && data.goldCoins >= 0 ? data.goldCoins : 0,
       disabled: data.disabled === true,
+      maintenanceBypass: data.maintenanceBypass === true,
       createdAt: data.createdAt || null,
       authProvider: data.authProvider || "firebase-auth"
     };
@@ -197,6 +199,51 @@ export async function setTags(uid, tags) {
   return { ok: true, uid: targetUid, tags: cleanTags };
 }
 
+export async function setGoldCoins(uid, amount) {
+  const targetUid = String(uid ?? "");
+  const balance = Number(amount);
+  if (!targetUid) throw new Error("uid-required");
+  if (!Number.isSafeInteger(balance) || balance < 0) {
+    throw new Error("Der Kontostand muss eine nicht-negative ganze Zahl sein.");
+  }
+  const current = auth.currentUser;
+  if (!current) throw new Error("Bitte melde dich erneut an.");
+
+  const currentSnap = await getDoc(doc(db, "users", current.uid));
+  const currentProfile = currentSnap.exists() ? currentSnap.data() || {} : {};
+  if (!Array.isArray(currentProfile.tags) || !currentProfile.tags.includes("admin")) {
+    throw new Error("Nur Admins dürfen Goldmünzen ändern.");
+  }
+
+  const targetRef = doc(db, "users", targetUid);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("Für diesen Account existiert noch kein TobiServices-Profil.");
+
+  await updateDoc(targetRef, {
+    goldCoins: balance,
+    lastProfileChangeAt: serverTimestamp()
+  });
+  return { ok: true, uid: targetUid, goldCoins: balance };
+}
+
+export async function setMaintenanceBypass(enabled) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("Bitte melde dich erneut an.");
+
+  const profileRef = doc(db, "users", uid);
+  const snap = await getDoc(profileRef);
+  const data = snap.exists() ? snap.data() || {} : {};
+  if (!Array.isArray(data.tags) || !data.tags.includes("admin")) {
+    throw new Error("Der Wartungsbypass ist nur für Admins verfügbar.");
+  }
+
+  await updateDoc(profileRef, {
+    maintenanceBypass: Boolean(enabled),
+    lastProfileChangeAt: serverTimestamp()
+  });
+  return Boolean(enabled);
+}
+
 export async function setDisabled(uid, disabled) {
   const targetUid = String(uid ?? "");
   if (!targetUid) throw new Error("uid-required");
@@ -211,6 +258,24 @@ export async function setDisabled(uid, disabled) {
     lastProfileChangeAt: serverTimestamp()
   });
   return { ok: true, uid: targetUid, disabled: Boolean(disabled) };
+}
+
+export function onMaintenanceMode(callback) {
+  if (typeof callback !== "function") throw new Error("callback-required");
+  return onSnapshot(
+    doc(db, "siteSettings", "jdnext"),
+    snapshot => {
+      const data = snapshot.exists() ? snapshot.data() || {} : {};
+      callback({
+        enabled: data.enabled === true,
+        message: typeof data.message === "string" ? data.message : ""
+      }, null);
+    },
+    error => {
+      console.error("JDNEXT-Wartungsstatus konnte nicht gelesen werden:", error);
+      callback(null, error);
+    }
+  );
 }
 
 export async function setMaintenanceMode(enabled, message = "") {
