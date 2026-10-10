@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
+const { onInit } = require("firebase-functions/v2/core");
 const { setGlobalOptions } = require("firebase-functions/v2/options");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
@@ -87,6 +88,12 @@ async function ensureTobiSetupDocuments() {
     }
   });
 }
+
+// Schema-Hinweise und öffentliche Wartungseinstellung beim ersten echten
+// Cloud-Functions-Start anlegen, nicht während des Deployments.
+onInit(async () => {
+  await ensureTobiSetupDocuments();
+});
 
 function cleanUsername(value) {
   return String(value ?? "").trim();
