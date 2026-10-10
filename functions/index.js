@@ -204,7 +204,7 @@ async function mintToken(account, uid) {
   // The users/{uid} profile is the authoritative source for all role tags.
   const profileSnap = await db.doc("users/" + uid).get();
   const profile = profileSnap.exists ? (profileSnap.data() || {}) : {};
-  const tags = normalizeTags(Array.isArray(profile.tags) ? profile.tags : account.tags);
+  const tags = normalizeTags(Array.isArray(profile.tags) ? profile.tags : []);
   return adminAuth.createCustomToken(uid, {
     tobi: true,
     admin: tags.includes("admin"),
