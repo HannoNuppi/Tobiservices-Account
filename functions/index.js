@@ -63,6 +63,7 @@ async function ensureTobiSetupDocuments() {
               username: "string; optional for legacy accounts",
               displayName: "string",
               tags: "array<string>; roles such as admin are tags",
+              goldCoins: "non-negative integer; shared server-managed TobiServices balance; defaults to 0",
               disabled: "boolean; optional",
               authProvider: "string; firebase-auth or tobi-legacy",
               createdAt: "timestamp",
@@ -229,6 +230,7 @@ exports.ensureUserProfile = onCall(async (request) => {
       email: authUser.email || "",
       displayName: authUser.displayName || "",
       tags: [],
+      goldCoins: 0,
       createdAt: FieldValue.serverTimestamp(),
       lastProfileChangeAt: FieldValue.serverTimestamp(),
       authProvider: "firebase-auth"
@@ -242,6 +244,7 @@ exports.ensureUserProfile = onCall(async (request) => {
     if (typeof existing.email !== "string" && authUser.email) patch.email = authUser.email;
     if (typeof existing.displayName !== "string" && authUser.displayName) patch.displayName = authUser.displayName;
     if (!Array.isArray(existing.tags)) patch.tags = [];
+    if (!Number.isSafeInteger(existing.goldCoins) || existing.goldCoins < 0) patch.goldCoins = 0;
     if (Object.keys(patch).length) {
       await profileRef.set(patch, { merge: true });
     }
@@ -334,6 +337,7 @@ exports.createTobiAccount = onCall(async (request) => {
     username,
     displayName,
     tags: [],
+    goldCoins: 0,
     createdAt: FieldValue.serverTimestamp(),
     lastProfileChangeAt: FieldValue.serverTimestamp()
   });
@@ -366,6 +370,7 @@ exports.listTobiUsers = onCall(async (request) => {
       username: profile.username || user.email || "",
       displayName: profile.displayName || user.displayName || user.email || "",
       tags: Array.isArray(profile.tags) ? profile.tags : [],
+      goldCoins: Number.isSafeInteger(profile.goldCoins) && profile.goldCoins >= 0 ? profile.goldCoins : 0,
       disabled: Boolean(user.disabled || profile.disabled),
       createdAt: profile.createdAt || user.metadata.creationTime || null,
       authProvider: profile.authProvider || (accountSnap.empty ? "firebase-auth" : "tobi-legacy")
@@ -407,6 +412,7 @@ exports.setTobiTags = onCall(async (request) => {
     username: profile.username || authUser.email || "",
     displayName: profile.displayName || authUser.displayName || authUser.email || "",
     tags,
+    goldCoins: Number.isSafeInteger(profile.goldCoins) && profile.goldCoins >= 0 ? profile.goldCoins : 0,
     lastProfileChangeAt: FieldValue.serverTimestamp(),
     authProvider: profile.authProvider || (accountSnap.empty ? "firebase-auth" : "tobi-legacy")
   }, { merge: true });
@@ -467,10 +473,14 @@ exports.setTobiDisabled = onCall(async (request) => {
   }
 
   const accountSnap = await db.collection("tobiAccounts").where("uid", "==", uid).limit(1).get();
+  const profileRef = db.doc("users/" + uid);
+  const profileSnap = await profileRef.get();
+  const currentProfile = profileSnap.exists ? (profileSnap.data() || {}) : {};
   await adminAuth.updateUser(uid, { disabled });
-  await db.doc("users/" + uid).set({
+  await profileRef.set({
     email: authUser.email || "",
     displayName: authUser.displayName || authUser.email || "",
+    goldCoins: Number.isSafeInteger(currentProfile.goldCoins) && currentProfile.goldCoins >= 0 ? currentProfile.goldCoins : 0,
     disabled,
     lastProfileChangeAt: FieldValue.serverTimestamp(),
     authProvider: accountSnap.empty ? "firebase-auth" : "tobi-legacy"
