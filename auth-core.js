@@ -1,8 +1,7 @@
-/* TobiServices Account Core
-   Neue Accounts verwenden direkt Firebase Authentication (E-Mail/Passwort).
-   Das Rollenprofil wird über geschützte Cloud Functions geladen/erstellt;
-   Admin-Rechte kommen ausschließlich aus serverseitig geprüften Tags.
-   loginLegacy bleibt für ältere Username/Passwort-Konten verfügbar. */
+/* TobiServices Account Core — Spark-kompatibel.
+   Neue Konten verwenden Firebase Authentication (E-Mail/Passwort).
+   Profile und Adminverwaltung nutzen Firestore mit restriktiven Security Rules.
+   Dieses Modul ruft keine Cloud Functions auf. */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -10,19 +9,19 @@ import {
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
-  signInWithCustomToken,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore,
   doc,
-  getDoc
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  collection,
+  getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import {
-  getFunctions,
-  httpsCallable
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 export const CONFIG = Object.freeze({
   firebase: {
@@ -36,26 +35,25 @@ export const CONFIG = Object.freeze({
   },
   loginUrl: "https://hannonuppi.github.io/Tobiservices-Account/login.html",
   accountUrl: "https://hannonuppi.github.io/Tobiservices-Account/account.html",
-  allowedReturnHosts: ["hannonuppi.github.io"],
-  functionsRegion: "europe-west1"
+  allowedReturnHosts: ["hannonuppi.github.io"]
 });
 
 const app = initializeApp(CONFIG.firebase);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const functions = getFunctions(app, CONFIG.functionsRegion);
 
 await setPersistence(auth, browserLocalPersistence);
 
-const loginCall = httpsCallable(functions, "loginTobiAccount");
-const ensureUserProfileCall = httpsCallable(functions, "ensureUserProfile");
-const createAccountCall = httpsCallable(functions, "createTobiAccount");
-const listUsersCall = httpsCallable(functions, "listTobiUsers");
-const setTagsCall = httpsCallable(functions, "setTobiTags");
-const setDisabledCall = httpsCallable(functions, "setTobiDisabled");
-const setMaintenanceModeCall = httpsCallable(functions, "setMaintenanceMode");
-
 export const signOut = () => firebaseSignOut(auth);
+
+function asProfile(uid, data) {
+  const profile = { uid, ...data };
+  if (!Number.isSafeInteger(profile.goldCoins) || profile.goldCoins < 0) {
+    profile.goldCoins = 0;
+  }
+  profile.tags = Array.isArray(profile.tags) ? profile.tags : [];
+  return profile;
+}
 
 export async function login(email, password) {
   const normalizedEmail = String(email ?? "").trim();
@@ -71,49 +69,59 @@ export async function login(email, password) {
   };
 }
 
-// Compatibility login for legacy TobiServices username/password accounts.
-// New web clients should use login(email, password) above.
-export async function loginLegacy(username, password) {
-  const result = await loginCall({
-    username: String(username ?? "").trim(),
-    password: String(password ?? "")
-  });
-
-  const data = result.data || {};
-  if (!data.token) throw new Error("custom-token-missing");
-
-  const authResult = await signInWithCustomToken(auth, data.token);
-  return {
-    user: authResult.user,
-    profile: data.profile || await getProfile(authResult.user.uid)
-  };
+// Old username/password accounts relied on Cloud Functions and are not
+// available in the free Spark-only configuration.
+export async function loginLegacy() {
+  const error = new Error("Legacy-Login benötigt das bisherige Cloud-Functions-Backend.");
+  error.code = "legacy-login-requires-cloud-functions";
+  throw error;
 }
 
 export async function getProfile(uid = auth.currentUser?.uid) {
   if (!uid) return null;
-
-  const snap = await getDoc(doc(db, "users", uid));
-  if (snap.exists()) {
-    const profile = { uid, ...snap.data() };
-    if (Number.isSafeInteger(profile.goldCoins) && profile.goldCoins >= 0) {
-      return profile;
-    }
-
-    // Backfill old profiles with the shared balance field through the trusted
-    // server function. If the new function has not been deployed yet, keep the
-    // account usable and show 0 until the backend can persist the default.
-    try {
-      const result = await ensureUserProfileCall({});
-      return result.data?.profile || { ...profile, goldCoins: 0 };
-    } catch (error) {
-      console.warn("Shared gold coin balance could not be initialized yet:", error);
-      return { ...profile, goldCoins: 0 };
-    }
+  if (!auth.currentUser || auth.currentUser.uid !== uid) {
+    throw new Error("profile-read-current-user-only");
   }
 
-  // The callable creates only a no-privilege profile; it cannot set admin tags.
-  const result = await ensureUserProfileCall({});
-  return result.data?.profile || null;
+  const profileRef = doc(db, "users", uid);
+  let snap = await getDoc(profileRef);
+
+  if (!snap.exists()) {
+    const currentUser = auth.currentUser;
+    try {
+      // Firestore rules permit profile self-creation only with tags=[] and
+      // goldCoins=0. A failed concurrent create is handled by re-reading.
+      await setDoc(profileRef, {
+        email: currentUser.email || "",
+        displayName: currentUser.displayName || "",
+        tags: [],
+        goldCoins: 0,
+        authProvider: "firebase-auth",
+        createdAt: serverTimestamp(),
+        lastProfileChangeAt: serverTimestamp()
+      });
+    } catch (error) {
+      snap = await getDoc(profileRef);
+      if (!snap.exists()) throw error;
+    }
+
+    snap = await getDoc(profileRef);
+    if (!snap.exists()) throw new Error("profile-create-failed");
+  }
+
+  const data = snap.data() || {};
+  if (!Object.prototype.hasOwnProperty.call(data, "goldCoins")) {
+    // Existing profiles from before the currency field may initialize it to
+    // zero once. Rules disallow changing a balance once the field exists.
+    try {
+      await updateDoc(profileRef, { goldCoins: 0 });
+    } catch (error) {
+      console.warn("Goldmünzen-Feld konnte noch nicht initialisiert werden:", error);
+    }
+    data.goldCoins = 0;
+  }
+
+  return asProfile(uid, data);
 }
 
 export function onUser(callback) {
@@ -139,42 +147,83 @@ export const hasTag = (profile, tag) =>
 
 export const isAdmin = profile => hasTag(profile, "admin");
 
-export async function createAccount(username, password, displayName = "") {
-  const result = await createAccountCall({
-    username: String(username ?? "").trim(),
-    password: String(password ?? ""),
-    displayName: String(displayName ?? "").trim()
-  });
-  return result.data;
+export async function createAccount() {
+  const error = new Error("Das Anlegen von Accounts erfolgt über Firebase Authentication → Users.");
+  error.code = "account-creation-use-firebase-console";
+  throw error;
 }
 
 export async function listUsers() {
-  const result = await listUsersCall();
-  return Array.isArray(result.data?.users) ? result.data.users : [];
+  const snapshot = await getDocs(collection(db, "users"));
+  return snapshot.docs.map(item => {
+    const data = item.data() || {};
+    return {
+      uid: item.id,
+      email: data.email || "",
+      username: data.username || data.email || "",
+      displayName: data.displayName || data.email || "",
+      tags: Array.isArray(data.tags) ? data.tags : [],
+      goldCoins: Number.isSafeInteger(data.goldCoins) && data.goldCoins >= 0 ? data.goldCoins : 0,
+      disabled: data.disabled === true,
+      createdAt: data.createdAt || null,
+      authProvider: data.authProvider || "firebase-auth"
+    };
+  }).sort((a, b) => String(a.email || a.username).localeCompare(String(b.email || b.username)));
+}
+
+function normalizeTags(tags) {
+  return [...new Set((Array.isArray(tags) ? tags : [])
+    .map(tag => String(tag).toLowerCase().trim())
+    .filter(Boolean)
+    .map(tag => tag.replace(/[^a-z0-9äöüß_-]+/g, "-").slice(0, 24))
+    .filter(Boolean))].slice(0, 20);
 }
 
 export async function setTags(uid, tags) {
-  const result = await setTagsCall({
-    uid: String(uid),
-    tags: Array.isArray(tags) ? tags : []
+  const targetUid = String(uid ?? "");
+  if (!targetUid) throw new Error("uid-required");
+  const cleanTags = normalizeTags(tags);
+  if (targetUid === auth.currentUser?.uid && !cleanTags.includes("admin")) {
+    throw new Error("Du kannst deinen eigenen Admin-Tag nicht entfernen.");
+  }
+
+  const ref = doc(db, "users", targetUid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Für diesen Account existiert noch kein TobiServices-Profil.");
+  await updateDoc(ref, {
+    tags: cleanTags,
+    lastProfileChangeAt: serverTimestamp()
   });
-  return result.data;
+  return { ok: true, uid: targetUid, tags: cleanTags };
 }
 
 export async function setDisabled(uid, disabled) {
-  const result = await setDisabledCall({
-    uid: String(uid),
-    disabled: Boolean(disabled)
+  const targetUid = String(uid ?? "");
+  if (!targetUid) throw new Error("uid-required");
+  if (targetUid === auth.currentUser?.uid && disabled) {
+    throw new Error("Du kannst deinen eigenen Account nicht sperren.");
+  }
+  const ref = doc(db, "users", targetUid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Für diesen Account existiert noch kein TobiServices-Profil.");
+  await updateDoc(ref, {
+    disabled: Boolean(disabled),
+    lastProfileChangeAt: serverTimestamp()
   });
-  return result.data;
+  return { ok: true, uid: targetUid, disabled: Boolean(disabled) };
 }
 
 export async function setMaintenanceMode(enabled, message = "") {
-  const result = await setMaintenanceModeCall({
+  const ref = doc(db, "siteSettings", "jdnext");
+  const data = {
     enabled: Boolean(enabled),
-    message: String(message ?? "").trim().slice(0, 500)
-  });
-  return result.data;
+    message: String(message ?? "").trim().slice(0, 500),
+    updatedAt: serverTimestamp()
+  };
+  const snap = await getDoc(ref);
+  if (snap.exists()) await updateDoc(ref, data);
+  else await setDoc(ref, data);
+  return { ok: true, enabled: Boolean(enabled), message: data.message };
 }
 
 export function requireLogin(returnUrl = location.href) {
@@ -182,10 +231,7 @@ export function requireLogin(returnUrl = location.href) {
 
   try {
     const url = new URL(returnUrl);
-    if (
-      url.protocol === "https:" &&
-      CONFIG.allowedReturnHosts.includes(url.hostname)
-    ) {
+    if (url.protocol === "https:" && CONFIG.allowedReturnHosts.includes(url.hostname)) {
       target += "?return=" + encodeURIComponent(url.href);
     }
   } catch {}
@@ -196,8 +242,7 @@ export function requireLogin(returnUrl = location.href) {
 export function safeReturnUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" &&
-      CONFIG.allowedReturnHosts.includes(url.hostname)
+    return url.protocol === "https:" && CONFIG.allowedReturnHosts.includes(url.hostname)
       ? url.href
       : null;
   } catch {
