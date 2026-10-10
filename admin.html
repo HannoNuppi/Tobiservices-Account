@@ -105,6 +105,19 @@ function escapeHtml(v){
     return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
   });
 }
+function backendErrorMessage(error){
+  const code=String(error?.code||"").replace(/^functions\\//,"");
+  const message=String(error?.message||"").trim();
+  const known={
+    "not-found":"Die Backend-Funktion wurde nicht gefunden. Vermutlich sind die aktuellen Cloud Functions noch nicht bereitgestellt.",
+    "permission-denied":"Der Server verweigert den Zugriff. Prüfe im Firebase-Profil users/{UID}, ob tags das Element admin enthält.",
+    "unauthenticated":"Die Anmeldung ist abgelaufen. Bitte melde dich erneut an.",
+    "unavailable":"Cloud Functions sind momentan nicht erreichbar. Prüfe Bereitstellung, Netzwerk und Firebase-Projekt.",
+    "failed-precondition":"Die Backend-Voraussetzungen sind nicht erfüllt. Prüfe den Firebase-Projektstatus und die Cloud-Functions-Konfiguration.",
+    "internal":"Die Backend-Funktion ist intern fehlgeschlagen. Prüfe die Firebase-Functions-Logs."
+  };
+  return known[code] || ("Backendfehler"+(code?" ("+code+")":"")+(message?": "+message:""));
+}
 function renderStats(){
   $("#count").textContent=users.length;
   $("#adminCount").textContent=users.filter(u=>Array.isArray(u.tags)&&u.tags.includes("admin")).length;
@@ -155,7 +168,12 @@ function renderUsers(){
 }
 async function refreshUsers(){
   try{users=await listUsers();selected.clear();renderUsers();}
-  catch(e){console.error(e);jdToast("Accounts konnten nicht geladen werden.");}
+  catch(e){
+    console.error("Accounts konnten nicht vom Backend geladen werden:",e);
+    const detail=backendErrorMessage(e);
+    $("#status").textContent=detail;
+    jdToast(detail,6000);
+  }
 }
 $("#userList").addEventListener("click",async function(e){
   const card=e.target.closest("[data-uid]");if(!card)return;
@@ -178,7 +196,7 @@ $("#userList").addEventListener("click",async function(e){
       tags.push(tag);
     }
     await setTags(u.uid,tags);u.tags=tags;renderUsers();jdToast("Tags gespeichert.");
-  }catch(err){console.error(err);jdToast("Änderung wurde vom Server abgelehnt.");await refreshUsers();}
+  }catch(err){console.error("Admin-Aktion fehlgeschlagen:",err);jdToast(backendErrorMessage(err),6000);await refreshUsers();}
 });
 $("#q").oninput=renderUsers;$("#tagFilter").onchange=renderUsers;$("#refreshUsers").onclick=refreshUsers;
 $("#clearSelection").onclick=function(){selected.clear();renderUsers();};
@@ -227,8 +245,8 @@ async function saveMaintenance(){
     jdToast(enabled?"JDNEXT ist jetzt im Wartungsmodus.":"JDNEXT ist wieder freigegeben.");
   }catch(error){
     console.error("Maintenance speichern fehlgeschlagen:",error);
-    $("#maintenanceStatus").textContent="Speichern fehlgeschlagen";
-    jdToast(error?.message||"Wartungsmodus konnte nicht gespeichert werden.");
+    $("#maintenanceStatus").textContent=backendErrorMessage(error);
+    jdToast(backendErrorMessage(error),6000);
   }finally{
     button.disabled=false;
   }
