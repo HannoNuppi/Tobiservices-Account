@@ -1,5 +1,6 @@
 const crypto = require("crypto");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const { onInit } = require("firebase-functions/v2/core");
 const { setGlobalOptions } = require("firebase-functions/v2/options");
 const { logger } = require("firebase-functions");
@@ -15,6 +16,7 @@ setGlobalOptions({
 
 const db = getFirestore();
 const adminAuth = getAuth();
+const JDNEXT_REWARD_SECRET = defineSecret("JDNEXT_REWARD_SECRET");
 
 const USERNAME_RE = /^[a-zA-Z0-9._-]{3,32}$/;
 const PASSWORD_MIN = 8;
@@ -63,7 +65,7 @@ async function ensureTobiSetupDocuments() {
               username: "string; optional for legacy accounts",
               displayName: "string",
               tags: "array<string>; roles such as admin are tags",
-              goldCoins: "non-negative integer; shared server-managed TobiServices balance; defaults to 0",
+              goldCoins: "safe integer; can be negative after JDNEXT moderation; defaults to 0",
               disabled: "boolean; optional",
               authProvider: "string; firebase-auth or tobi-legacy",
               createdAt: "timestamp",
@@ -78,7 +80,7 @@ async function ensureTobiSetupDocuments() {
         collections: {
           users: {
             fields: {
-              goldCoins: "non-negative integer; shared server-managed TobiServices balance; defaults to 0"
+              goldCoins: "safe integer; can be negative after JDNEXT moderation; defaults to 0"
             }
           }
         }
@@ -255,7 +257,7 @@ exports.ensureUserProfile = onCall(async (request) => {
     if (typeof existing.email !== "string" && authUser.email) patch.email = authUser.email;
     if (typeof existing.displayName !== "string" && authUser.displayName) patch.displayName = authUser.displayName;
     if (!Array.isArray(existing.tags)) patch.tags = [];
-    if (!Number.isSafeInteger(existing.goldCoins) || existing.goldCoins < 0) patch.goldCoins = 0;
+    if (!Number.isSafeInteger(existing.goldCoins)) patch.goldCoins = 0;
     if (Object.keys(patch).length) {
       await profileRef.set(patch, { merge: true });
     }
@@ -384,7 +386,7 @@ exports.listTobiUsers = onCall(async (request) => {
       username: profile.username || user.email || "",
       displayName: profile.displayName || user.displayName || user.email || "",
       tags: Array.isArray(profile.tags) ? profile.tags : [],
-      goldCoins: Number.isSafeInteger(profile.goldCoins) && profile.goldCoins >= 0 ? profile.goldCoins : 0,
+      goldCoins: Number.isSafeInteger(profile.goldCoins) ? profile.goldCoins : 0,
       disabled: Boolean(user.disabled || profile.disabled),
       createdAt: profile.createdAt || user.metadata.creationTime || null,
       authProvider: profile.authProvider || (legacySnap && !legacySnap.empty ? "tobi-legacy" : "firebase-auth")
@@ -426,7 +428,7 @@ exports.setTobiTags = onCall(async (request) => {
     username: profile.username || authUser.email || "",
     displayName: profile.displayName || authUser.displayName || authUser.email || "",
     tags,
-    goldCoins: Number.isSafeInteger(profile.goldCoins) && profile.goldCoins >= 0 ? profile.goldCoins : 0,
+    goldCoins: Number.isSafeInteger(profile.goldCoins) ? profile.goldCoins : 0,
     lastProfileChangeAt: FieldValue.serverTimestamp(),
     authProvider: profile.authProvider || (accountSnap.empty ? "firebase-auth" : "tobi-legacy")
   }, { merge: true });
@@ -494,7 +496,7 @@ exports.setTobiDisabled = onCall(async (request) => {
   await profileRef.set({
     email: authUser.email || "",
     displayName: authUser.displayName || authUser.email || "",
-    goldCoins: Number.isSafeInteger(currentProfile.goldCoins) && currentProfile.goldCoins >= 0 ? currentProfile.goldCoins : 0,
+    goldCoins: Number.isSafeInteger(currentProfile.goldCoins) ? currentProfile.goldCoins : 0,
     disabled,
     lastProfileChangeAt: FieldValue.serverTimestamp(),
     authProvider: accountSnap.empty ? "firebase-auth" : "tobi-legacy"
@@ -509,4 +511,163 @@ exports.setTobiDisabled = onCall(async (request) => {
   }
 
   return { ok: true, uid, disabled, email: authUser.email || "" };
+});
+
+
+// Private HTTP bridge called only from the JDNEXT Cloud Functions backend.
+// The shared secret is stored in Secret Manager and is never shipped to a browser.
+function sameSecret(a, b) {
+  const left = Buffer.from(String(a || ""));
+  const right = Buffer.from(String(b || ""));
+  return left.length > 0 && left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+async function verifiedTobiSession(idToken) {
+  if (typeof idToken !== "string" || idToken.length < 100 || idToken.length > 10000) {
+    const error = new Error("invalid-id-token");
+    error.statusCode = 401;
+    throw error;
+  }
+  const decoded = await adminAuth.verifyIdToken(idToken, true);
+  if (decoded.firebase?.sign_in_provider === "anonymous") {
+    const error = new Error("anonymous-tobi-session-not-eligible");
+    error.statusCode = 401;
+    throw error;
+  }
+  const authUser = await adminAuth.getUser(decoded.uid);
+  const profileSnap = await db.doc("users/" + decoded.uid).get();
+  if (authUser.disabled || !profileSnap.exists || profileSnap.data()?.disabled === true) {
+    const error = new Error("account-disabled-or-profile-missing");
+    error.statusCode = 403;
+    throw error;
+  }
+  return { uid: decoded.uid, authUser, profile: profileSnap.data() || {} };
+}
+
+async function applyJdnextCoinEvent({ uid, eventId, amount, reason }) {
+  if (!/^[A-Za-z0-9_-]{8,200}$/.test(String(uid || "")) ||
+      !/^[A-Za-z0-9_-]{8,200}$/.test(String(eventId || "")) ||
+      !Number.isSafeInteger(amount) || (amount !== 10 && amount !== -20)) {
+    const error = new Error("invalid-coin-event");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await adminAuth.getUser(uid);
+  const profileRef = db.doc("users/" + uid);
+  const eventRef = db.doc("jdnextCoinEvents/" + eventId);
+  let balance = 0;
+  let applied = false;
+
+  await db.runTransaction(async transaction => {
+    const eventSnap = await transaction.get(eventRef);
+    const profileSnap = await transaction.get(profileRef);
+    if (eventSnap.exists) {
+      const profile = profileSnap.exists ? (profileSnap.data() || {}) : {};
+      balance = Number.isSafeInteger(profile.goldCoins) ? profile.goldCoins : 0;
+      return;
+    }
+    if (!profileSnap.exists) {
+      const error = new Error("tobiservices-profile-not-found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const profile = profileSnap.data() || {};
+    const current = Number.isSafeInteger(profile.goldCoins) ? profile.goldCoins : 0;
+    balance = current + amount;
+    if (!Number.isSafeInteger(balance)) {
+      const error = new Error("coin-balance-out-of-range");
+      error.statusCode = 409;
+      throw error;
+    }
+
+    transaction.set(eventRef, {
+      uid,
+      amount,
+      reason,
+      createdAt: FieldValue.serverTimestamp()
+    });
+    transaction.set(profileRef, {
+      goldCoins: balance,
+      lastProfileChangeAt: FieldValue.serverTimestamp(),
+      ...(amount < 0 && balance <= -50 ? { disabled: true } : {})
+    }, { merge: true });
+    applied = true;
+  });
+
+  if (balance <= -50) {
+    // A low balance suspends the account; it is never deleted.
+    await adminAuth.updateUser(uid, { disabled: true });
+    await profileRef.set({
+      disabled: true,
+      lastProfileChangeAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    const legacy = await db.collection("tobiAccounts").where("uid", "==", uid).limit(1).get();
+    if (!legacy.empty) {
+      await legacy.docs[0].ref.update({
+        disabled: true,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: "JDNEXT moderation"
+      });
+    }
+  }
+
+  return { ok: true, uid, amount, balance, applied, disabled: balance <= -50 };
+}
+
+exports.jdnextCoinEvent = onRequest({ secrets: [JDNEXT_REWARD_SECRET] }, async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).json({ ok: false, error: "method-not-allowed" });
+    return;
+  }
+
+  if (!sameSecret(req.headers["x-jdnext-secret"], JDNEXT_REWARD_SECRET.value())) {
+    res.status(403).json({ ok: false, error: "forbidden" });
+    return;
+  }
+
+  try {
+    const action = String(req.body?.action || "");
+    if (action === "verify") {
+      const session = await verifiedTobiSession(req.body?.idToken);
+      res.status(200).json({ ok: true, uid: session.uid });
+      return;
+    }
+
+    if (action === "reward-post") {
+      const result = await applyJdnextCoinEvent({
+        uid: String(req.body?.uid || ""),
+        eventId: String(req.body?.eventId || ""),
+        amount: 10,
+        reason: "jdnext-homework-post"
+      });
+      res.status(200).json(result);
+      return;
+    }
+
+    if (action === "penalty") {
+      const result = await applyJdnextCoinEvent({
+        uid: String(req.body?.uid || ""),
+        eventId: String(req.body?.eventId || ""),
+        amount: -20,
+        reason: "jdnext-homework-reported"
+      });
+      res.status(200).json(result);
+      return;
+    }
+
+    res.status(400).json({ ok: false, error: "unknown-action" });
+  } catch (error) {
+    const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+    logger.error("JDNEXT coin bridge failed", {
+      status,
+      message: String(error?.message || error)
+    });
+    res.status(status).json({
+      ok: false,
+      error: status >= 500 ? "tobiservices-backend-error" : String(error?.message || "request-failed")
+    });
+  }
 });
