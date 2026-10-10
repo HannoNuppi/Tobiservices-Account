@@ -89,4 +89,4 @@ GitHub Pages liefert statische Dateien aus. Ein clientseitiger Beta-Bildschirm i
 
 ## GitHub Pages
 
-Die Website-Dateien werden bei aktivierter GitHub-Pages-Konfiguration von `main` veröffentlicht. Für die Spark-kompatible Version ist kein `firebase deploy --only functions` erforderlich. Die Firestore-Regeln müssen einmalig in der Firebase Console veröffentlicht werden.
+Die Website-Dateien werden bei aktivierter GitHub-Pages-Konfiguration von `main` veröffentlicht. Das grundlegende Account Center funktioniert mit Firebase Authentication und Firestore; für JDNEXT-Münzboni, Moderationsabzüge und die automatische Auth-Sperre müssen die oben beschriebenen Cloud Functions auf Blaze deployed sein. Die Firestore-Regeln in beiden Projekten müssen ebenfalls veröffentlicht werden.
