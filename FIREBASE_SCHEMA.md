@@ -1,6 +1,6 @@
 # Firebase-Datenstruktur – TobiServices
 
-Diese Struktur wird vom Backend verwaltet. Firestore ist schemafrei: Eine Collection wird sichtbar, sobald ein echtes Dokument darin angelegt wird. Das Backend legt die Schema-Referenz bei der ersten Admin-Einrichtung unter `system/schema` an.
+Diese Struktur wird vom Backend verwaltet. Firestore ist schemafrei: Eine Collection wird sichtbar, sobald ein echtes Dokument darin angelegt wird. Beim ersten Start der Cloud-Functions-Runtime legt das Backend `system/schema` und – falls nicht vorhanden – `siteSettings/jdnext` an. Die tatsächlichen Account-Dokumente entstehen erst bei erfolgreicher Account-Erstellung.
 
 ## 1. `tobiAccounts/{usernameKey}`
 
@@ -45,7 +45,7 @@ Auch dieses Dokument erstellt das Backend automatisch. `{uid}` muss exakt der vo
 
 ## 3. `siteSettings/jdnext`
 
-Wird bei der ersten Admin-Einrichtung mit Standardwerten angelegt. Der Admin-Bereich aktualisiert danach diesen Datensatz:
+Wird beim ersten Start der Cloud-Functions-Runtime mit Standardwerten angelegt. Der Admin-Bereich aktualisiert danach diesen Datensatz:
 
 ```json
 {
