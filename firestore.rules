@@ -47,7 +47,9 @@ service cloud.firestore {
         ])
         && (uid != request.auth.uid
           || (request.resource.data.tags is list
-            && request.resource.data.tags.hasAny(['admin'])))
+            && request.resource.data.tags.hasAny(['admin'])
+            && (!('disabled' in request.resource.data)
+              || request.resource.data.disabled != true)))
       ) || (
         ownProfile(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goldCoins'])
