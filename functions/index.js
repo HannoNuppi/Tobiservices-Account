@@ -59,9 +59,12 @@ async function ensureTobiSetupDocuments() {
             documentPath: "users/{uid}",
             manualEntryAllowed: false,
             fields: {
-              username: "string",
+              email: "string",
+              username: "string; optional for legacy accounts",
               displayName: "string",
-              tags: "array<string>",
+              tags: "array<string>; roles such as admin are tags",
+              disabled: "boolean; optional",
+              authProvider: "string; firebase-auth or tobi-legacy",
               createdAt: "timestamp",
               lastProfileChangeAt: "timestamp"
             }
