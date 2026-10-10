@@ -49,7 +49,7 @@ export const signOut = () => firebaseSignOut(auth);
 
 function asProfile(uid, data) {
   const profile = { uid, ...data };
-  if (!Number.isSafeInteger(profile.goldCoins) || profile.goldCoins < 0) {
+  if (!Number.isSafeInteger(profile.goldCoins)) {
     profile.goldCoins = 0;
   }
   profile.tags = Array.isArray(profile.tags) ? profile.tags : [];
@@ -164,7 +164,7 @@ export async function listUsers() {
       username: data.username || data.email || "",
       displayName: data.displayName || data.email || "",
       tags: Array.isArray(data.tags) ? data.tags : [],
-      goldCoins: Number.isSafeInteger(data.goldCoins) && data.goldCoins >= 0 ? data.goldCoins : 0,
+      goldCoins: Number.isSafeInteger(data.goldCoins) ? data.goldCoins : 0,
       disabled: data.disabled === true,
       maintenanceBypass: data.maintenanceBypass === true,
       createdAt: data.createdAt || null,
@@ -203,8 +203,8 @@ export async function setGoldCoins(uid, amount) {
   const targetUid = String(uid ?? "");
   const balance = Number(amount);
   if (!targetUid) throw new Error("uid-required");
-  if (!Number.isSafeInteger(balance) || balance < 0) {
-    throw new Error("Der Kontostand muss eine nicht-negative ganze Zahl sein.");
+  if (!Number.isSafeInteger(balance)) {
+    throw new Error("Der Kontostand muss eine ganze Zahl im sicheren Zahlenbereich sein.");
   }
   const current = auth.currentUser;
   if (!current) throw new Error("Bitte melde dich erneut an.");
