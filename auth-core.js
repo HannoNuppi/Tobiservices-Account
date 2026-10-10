@@ -11,6 +11,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   signInWithCustomToken,
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
@@ -47,7 +48,7 @@ export const functions = getFunctions(app, CONFIG.functionsRegion);
 await setPersistence(auth, browserLocalPersistence);
 
 const loginCall = httpsCallable(functions, "loginTobiAccount");
-const bootstrapAdminCall = httpsCallable(functions, "bootstrapTobiAdmin");
+const ensureUserProfileCall = httpsCallable(functions, "ensureUserProfile");
 const createAccountCall = httpsCallable(functions, "createTobiAccount");
 const listUsersCall = httpsCallable(functions, "listTobiUsers");
 const setTagsCall = httpsCallable(functions, "setTobiTags");
@@ -56,7 +57,23 @@ const setMaintenanceModeCall = httpsCallable(functions, "setMaintenanceMode");
 
 export const signOut = () => firebaseSignOut(auth);
 
-export async function login(username, password) {
+export async function login(email, password) {
+  const normalizedEmail = String(email ?? "").trim();
+  const secret = String(password ?? "");
+  if (!normalizedEmail || !secret) {
+    throw new Error("email-and-password-required");
+  }
+
+  const result = await signInWithEmailAndPassword(auth, normalizedEmail, secret);
+  return {
+    user: result.user,
+    profile: await getProfile(result.user.uid)
+  };
+}
+
+// Compatibility login for legacy TobiServices username/password accounts.
+// New web clients should use login(email, password) above.
+export async function loginLegacy(username, password) {
   const result = await loginCall({
     username: String(username ?? "").trim(),
     password: String(password ?? "")
@@ -68,7 +85,7 @@ export async function login(username, password) {
   const authResult = await signInWithCustomToken(auth, data.token);
   return {
     user: authResult.user,
-    profile: data.profile || null
+    profile: data.profile || await getProfile(authResult.user.uid)
   };
 }
 
@@ -76,9 +93,12 @@ export async function getProfile(uid = auth.currentUser?.uid) {
   if (!uid) return null;
 
   const snap = await getDoc(doc(db, "users", uid));
-  return snap.exists()
-    ? { uid, ...snap.data() }
-    : null;
+  if (snap.exists()) return { uid, ...snap.data() };
+
+  // Existing Firebase Authentication users may predate the tag-profile system.
+  // The callable creates only a no-privilege profile; it cannot set admin tags.
+  const result = await ensureUserProfileCall({});
+  return result.data?.profile || null;
 }
 
 export function onUser(callback) {
@@ -103,24 +123,6 @@ export const hasTag = (profile, tag) =>
   profile.tags.includes(String(tag).toLowerCase());
 
 export const isAdmin = profile => hasTag(profile, "admin");
-
-export async function bootstrapAdmin(username, password, bootstrapKey, displayName = "") {
-  const result = await bootstrapAdminCall({
-    username: String(username ?? "").trim(),
-    password: String(password ?? ""),
-    bootstrapKey: String(bootstrapKey ?? ""),
-    displayName: String(displayName ?? "").trim()
-  });
-
-  const data = result.data || {};
-  if (!data.token) throw new Error("custom-token-missing");
-
-  const authResult = await signInWithCustomToken(auth, data.token);
-  return {
-    user: authResult.user,
-    profile: data.profile || null
-  };
-}
 
 export async function createAccount(username, password, displayName = "") {
   const result = await createAccountCall({
