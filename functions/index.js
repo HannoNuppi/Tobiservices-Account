@@ -408,7 +408,7 @@ exports.setTobiTags = onCall(async (request) => {
     displayName: profile.displayName || authUser.displayName || authUser.email || "",
     tags,
     lastProfileChangeAt: FieldValue.serverTimestamp(),
-    authProvider: profile.authProvider || "firebase-auth"
+    authProvider: profile.authProvider || (accountSnap.empty ? "firebase-auth" : "tobi-legacy")
   }, { merge: true });
 
   if (!profileSnap.exists) {
