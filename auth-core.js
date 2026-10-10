@@ -47,6 +47,7 @@ export const functions = getFunctions(app, CONFIG.functionsRegion);
 await setPersistence(auth, browserLocalPersistence);
 
 const loginCall = httpsCallable(functions, "loginTobiAccount");
+const bootstrapAdminCall = httpsCallable(functions, "bootstrapTobiAdmin");
 const createAccountCall = httpsCallable(functions, "createTobiAccount");
 const listUsersCall = httpsCallable(functions, "listTobiUsers");
 const setTagsCall = httpsCallable(functions, "setTobiTags");
@@ -102,6 +103,24 @@ export const hasTag = (profile, tag) =>
   profile.tags.includes(String(tag).toLowerCase());
 
 export const isAdmin = profile => hasTag(profile, "admin");
+
+export async function bootstrapAdmin(username, password, bootstrapKey, displayName = "") {
+  const result = await bootstrapAdminCall({
+    username: String(username ?? "").trim(),
+    password: String(password ?? ""),
+    bootstrapKey: String(bootstrapKey ?? ""),
+    displayName: String(displayName ?? "").trim()
+  });
+
+  const data = result.data || {};
+  if (!data.token) throw new Error("custom-token-missing");
+
+  const authResult = await signInWithCustomToken(auth, data.token);
+  return {
+    user: authResult.user,
+    profile: data.profile || null
+  };
+}
 
 export async function createAccount(username, password, displayName = "") {
   const result = await createAccountCall({
