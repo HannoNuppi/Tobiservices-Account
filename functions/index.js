@@ -201,7 +201,10 @@ async function buildProfile(uid) {
 }
 
 async function mintToken(account, uid) {
-  const tags = normalizeTags(account.tags);
+  // The users/{uid} profile is the authoritative source for all role tags.
+  const profileSnap = await db.doc("users/" + uid).get();
+  const profile = profileSnap.exists ? (profileSnap.data() || {}) : {};
+  const tags = normalizeTags(Array.isArray(profile.tags) ? profile.tags : account.tags);
   return adminAuth.createCustomToken(uid, {
     tobi: true,
     admin: tags.includes("admin"),
@@ -369,7 +372,7 @@ exports.listTobiUsers = onCall(async (request) => {
       tags: Array.isArray(profile.tags) ? profile.tags : [],
       disabled: Boolean(user.disabled || profile.disabled),
       createdAt: profile.createdAt || user.metadata.creationTime || null,
-      authProvider: profile.authProvider || "firebase-auth"
+      authProvider: profile.authProvider || (accountSnap.empty ? "firebase-auth" : "tobi-legacy")
     };
   }));
 
@@ -467,16 +470,16 @@ exports.setTobiDisabled = onCall(async (request) => {
     throw new HttpsError("not-found", "Firebase-Auth-Account nicht gefunden.");
   }
 
+  const accountSnap = await db.collection("tobiAccounts").where("uid", "==", uid).limit(1).get();
   await adminAuth.updateUser(uid, { disabled });
   await db.doc("users/" + uid).set({
     email: authUser.email || "",
     displayName: authUser.displayName || authUser.email || "",
     disabled,
     lastProfileChangeAt: FieldValue.serverTimestamp(),
-    authProvider: "firebase-auth"
+    authProvider: accountSnap.empty ? "firebase-auth" : "tobi-legacy"
   }, { merge: true });
 
-  const accountSnap = await db.collection("tobiAccounts").where("uid", "==", uid).limit(1).get();
   if (!accountSnap.empty) {
     await accountSnap.docs[0].ref.update({
       disabled,
