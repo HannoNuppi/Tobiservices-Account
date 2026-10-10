@@ -175,7 +175,7 @@ function errorDetails(error){
     message:error?.message||"(keine Fehlermeldung)",
     serverResponse:error?.customData?.serverResponse||error?.details||""
   };
-  return Object.entries(details).filter(([,value])=>value!=="").map(([key,value])=>key+": "+String(value)).join("\\n");
+  return Object.entries(details).filter(([,value])=>value!=="").map(([key,value])=>key+": "+String(value)).join("\n");
 }
 async function refreshUsers(){
   try{
@@ -191,7 +191,7 @@ async function refreshUsers(){
     const output=$("#diagnosticOutput");
     if(output){
       output.hidden=false;
-      output.textContent="Fehler beim Laden der Accountliste\\n"+errorDetails(e)+"\\n\\nKlicke auf „Verbindung prüfen“, um Profil-Lesen, Accountliste und Wartungsstatus getrennt zu testen.";
+      output.textContent="Fehler beim Laden der Accountliste\n"+errorDetails(e)+"\n\nKlicke auf „Verbindung prüfen“, um Profil-Lesen, Accountliste und Wartungsstatus getrennt zu testen.";
     }
     jdToast(detail,6000);
   }
@@ -203,35 +203,35 @@ async function runDiagnostics(){
   button.disabled=true;
   button.textContent="Prüfe …";
   output.hidden=false;
-  const reportError=(name,error)=>lines.push("FEHLER · "+name+"\\n"+errorDetails(error));
+  const reportError=(name,error)=>lines.push("FEHLER · "+name+"\n"+errorDetails(error));
   try{
     const user=auth.currentUser;
     if(!user){
-      lines.push("FEHLER · Anmeldung\\nKein Firebase-User in auth.currentUser. Bitte abmelden und erneut anmelden.");
+      lines.push("FEHLER · Anmeldung\nKein Firebase-User in auth.currentUser. Bitte abmelden und erneut anmelden.");
     }else{
-      lines.push("Anmeldung OK\\nUID: "+user.uid+"\\nE-Mail: "+(user.email||"(nicht verfügbar)"));
+      lines.push("Anmeldung OK\nUID: "+user.uid+"\nE-Mail: "+(user.email||"(nicht verfügbar)"));
       try{
         const profile=await getDoc(doc(tobiDb,"users",user.uid));
-        if(!profile.exists()) lines.push("FEHLER · Eigenes Profil\\nDas Dokument users/"+user.uid+" existiert nicht.");
+        if(!profile.exists()) lines.push("FEHLER · Eigenes Profil\nDas Dokument users/"+user.uid+" existiert nicht.");
         else{
           const data=profile.data()||{};
-          lines.push("Eigenes Profil OK\\nTags: "+JSON.stringify(data.tags||[])+"\\nAdmin-Tag: "+(Array.isArray(data.tags)&&data.tags.includes("admin")?"ja":"nein"));
+          lines.push("Eigenes Profil OK\nTags: "+JSON.stringify(data.tags||[])+"\nAdmin-Tag: "+(Array.isArray(data.tags)&&data.tags.includes("admin")?"ja":"nein"));
         }
       }catch(error){reportError("Eigenes Profil lesen",error);}
       try{
         const items=await getDocs(collection(tobiDb,"users"));
-        lines.push("Accountliste OK\\nSichtbare Profile: "+items.size);
+        lines.push("Accountliste OK\nSichtbare Profile: "+items.size);
       }catch(error){reportError("Accountliste lesen",error);}
       try{
         const status=await getDoc(doc(tobiDb,"siteSettings","jdnext"));
-        lines.push("Wartungsstatus lesen OK\\nDokument vorhanden: "+status.exists());
+        lines.push("Wartungsstatus lesen OK\nDokument vorhanden: "+status.exists());
       }catch(error){reportError("Wartungsstatus lesen",error);}
     }
   }catch(error){reportError("Diagnose",error);}
-  output.textContent=lines.join("\\n\\n");
+  output.textContent=lines.join("\n\n");
   button.disabled=false;
   button.textContent="Verbindung prüfen";
-  console.info("TobiServices Admin Diagnose\\n"+output.textContent);
+  console.info("TobiServices Admin Diagnose\n"+output.textContent);
 }
 $("#diagnoseBackend").onclick=runDiagnostics;
 $("#userList").addEventListener("click",async function(e){
