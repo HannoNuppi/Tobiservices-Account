@@ -66,15 +66,12 @@ Für die automatische Vergabe und den Abzug wird ein serverseitiger Aufruf zwisc
 # Projekt tobiservices
 firebase use tobiservices
 firebase functions:secrets:set JDNEXT_REWARD_SECRET
-firebase deploy --only functions
+firebase deploy --only functions,firestore:rules
 
 # Projekt next-untis-plus
 firebase use next-untis-plus
 firebase functions:secrets:set TOBI_REWARD_SECRET
-firebase deploy --only functions
-
-# Rules in beiden Projekten veröffentlichen
-firebase deploy --only firestore:rules
+firebase deploy --only functions,firestore:rules
 ```
 
 Die CLI fragt den Secret-Wert interaktiv ab. Verwende bei beiden Secret-Namen denselben zufälligen Wert. Cloud Functions und Secret Manager benötigen einen Firebase-Blaze-Tarif. Die bestehende Website bleibt statisch erreichbar; ohne veröffentlichte Functions sind die serverseitigen Münzfunktionen aber nicht aktiv.
