@@ -1,82 +1,94 @@
 # TobiServices Account Center
 
-Zentrales, E-Mail-freies Account-System für TobiServices-Websites.
+Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Neue Konten werden direkt über **Firebase Authentication (E-Mail + Passwort)** verwaltet. Rollen wie `admin` werden ausschließlich über das serverseitig geprüfte Tag-Profil gesteuert.
 
-## Account-Modell
+## Konten und Anmeldung
 
-TobiServices verwendet eigene Accounts mit **Username + Passwort**.
+- Neue Accounts werden im Firebase-Projekt `tobiservices` unter **Authentication → Users** angelegt.
+- Websites verwenden Firebase Authentication für E-Mail-/Passwort-Anmeldung.
+- Beim ersten Login wird über die geschützte Cloud Function `ensureUserProfile` das Profil `users/{uid}` erzeugt, falls es noch nicht existiert. Neue Profile beginnen immer ohne Tags.
+- Berechtigungen werden über `users/{uid}.tags` entschieden. Nur ein Profil mit dem Tag `admin` erhält Admin-Rechte.
+- Das Admin Center listet die Firebase-Authentication-Konten und verwaltet deren Tags. Es muss kein zweites Passwort-System in `tobiAccounts` gepflegt werden.
+- Legacy-Accounts mit TobiServices-Benutzername können vorerst über `loginLegacy()` weiter unterstützt werden. Neue Seiten sollen `login(email, password)` verwenden.
 
-Es gibt keine E-Mail-Adresse und keine Firebase-E-Mail/Passwort-Anmeldung. Die Passwortprüfung passiert serverseitig in Firebase Cloud Functions mit scrypt. Die Passwortdaten liegen in der geschützten Firestore-Sammlung `tobiAccounts` und werden niemals an Browser-Clients ausgeliefert.
-
-Für die Sitzung wird intern ein Firebase Custom Token verwendet. Dadurch können Firestore Rules weiterhin sicher mit `request.auth.uid` arbeiten. Benutzer sehen davon nur die normale TobiServices-Anmeldung.
-
-## Einmalige Firebase-Einrichtung
+## Firebase-Einrichtung
 
 Im lokalen Projektordner:
 
-1. Firebase CLI installieren und mit deinem Google/Firebase-Konto anmelden.
+1. Firebase CLI installieren und mit deinem Firebase-Konto anmelden.
 2. Projekt `tobiservices` auswählen.
-3. Einen geheimen Bootstrap-Schlüssel setzen:
-   `firebase functions:secrets:set TOBI_BOOTSTRAP_KEY`
-4. Backend und Firestore Rules deployen:
+3. Prüfen, dass E-Mail/Passwort unter Firebase Authentication → Sign-in method aktiviert ist.
+4. Backend und Firestore-Regeln deployen:
+
    `firebase deploy --only functions,firestore`
-5. Den lokalen TobiServices Account Client starten.
-6. Unter „Ersten Admin anlegen“ denselben Bootstrap-Schlüssel verwenden.
 
-Der Bootstrap-Endpunkt lässt sich nach dem Erstellen des ersten Admins nicht mehr zur Erstellung eines weiteren Admins verwenden.
+Beim Deploy kann Firebase fragen, ob die alte Function `bootstrapTobiAdmin` entfernt werden soll. Bestätige die Entfernung, damit der nicht mehr verwendete Bootstrap-Key-Endpunkt nicht als alte deployed Function weiterbesteht.
 
-Cloud Functions für Firebase benötigen aktuell den Blaze-Tarif.
+Cloud Functions benötigen laut der Projektkonfiguration den Firebase-Blaze-Tarif.
 
-## Seiten
+## Ersten Admin sicher einrichten
 
-- `login.html` – Username/Passwort-Login
-- `account.html` – eigener Account und Tags
-- `admin.html` – Admin Center
-- `auth-core.js` – gemeinsames Client-Modul
-- `functions/index.js` – serverseitige Account-Logik
-- `functions/package.json` – Backend-Abhängigkeiten
-- `firestore.rules` – geschützte Regeln
+Der alte Bootstrap-Key ist nicht mehr erforderlich und wird nicht mehr durch den aktuellen Backend-Code verwendet. Für das erste Admin-Konto wird die Rolle einmalig direkt über die vertrauenswürdige **Firebase Console** vergeben:
 
-## Firebase-Datenstruktur
+1. Firebase Console → Authentication → Users öffnen.
+2. Das eigene Konto auswählen und dessen vollständige UID kopieren.
+3. Firestore Database → Collection `users` öffnen.
+4. Falls noch kein Dokument existiert, ein Dokument mit genau dieser UID als Dokument-ID anlegen. Existiert es schon, nur die Felder ergänzen/aktualisieren.
+5. Die Felder setzen:
+   - `email` — String mit der E-Mail-Adresse
+   - `displayName` — String mit dem Anzeigenamen
+   - `tags` — Array mit einem String-Element: `admin`
+   - `createdAt` — Timestamp (beim neuen Dokument)
+   - `lastProfileChangeAt` — Timestamp
 
-Beim ersten Start der Cloud-Functions-Runtime legt das Backend die Schema-Referenz `system/schema` und – falls sie noch fehlt – `siteSettings/jdnext` mit Standardwerten an. Der echte Admin wird bei der erstmaligen Bootstrap-Erstellung in `tobiAccounts/{usernameKey}` und `users/{uid}` angelegt.
+Die Firestore Console benutzt ein vertrauenswürdiges Projekt-Owner/Admin-Konto und umgeht die Client-Regeln für diese manuelle Erstinitialisierung. **Nie** Client-Schreibrechte auf Rollen oder Tags öffnen. Danach können Admins die Tags über die geschützten Cloud Functions verwalten.
 
-**Bitte Admin-Accounts nicht manuell in Firestore anlegen.** Die Firebase-Authentication-UID und der scrypt-Passwort-Hash müssen zusammenpassen; das erledigt das Bootstrap-Backend. Der Secret-Wert `TOBI_BOOTSTRAP_KEY` wird ausschließlich in Firebase/Google Cloud Secret Manager gespeichert.
+Es gibt absichtlich keinen öffentlichen Endpunkt, über den unangemeldete Besucher sich selbst oder andere Accounts zu Admins machen könnten.
 
-Siehe [FIREBASE_SCHEMA.md](FIREBASE_SCHEMA.md) für Feldnamen und Beispiele.
+## Firestore-Datenstruktur
+
+### `users/{uid}`
+
+Profil für ein Firebase-Authentication-Konto. Die ID muss exakt der Firebase-Auth-UID entsprechen.
+
+```json
+{
+  "email": "person@example.com",
+  "displayName": "Beispiel",
+  "tags": [],
+  "authProvider": "firebase-auth",
+  "createdAt": "<Firestore Timestamp>",
+  "lastProfileChangeAt": "<Firestore Timestamp>"
+}
+```
+
+Das Profil wird von `ensureUserProfile` mit leeren Tags angelegt. Admin-Funktionen werden nicht über vom Client übermittelte Tags freigeschaltet, sondern lesen die gespeicherten Tags serverseitig.
+
+### `tobiAccounts/{usernameKey}` (Legacy)
+
+Diese Collection hält eventuell noch alte Username/Passwort-Konten. Passwort-Hashes und Salts sind geschützt und dürfen nicht an Browser ausgeliefert werden. Neue E-Mail-Konten benötigen keinen Eintrag in dieser Collection. Wenn ein Legacy-Account existiert, synchronisiert `setTobiTags` dessen Tags weiterhin.
+
+### `siteSettings/jdnext`
+
+Der Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt; Änderungen erfolgen ausschließlich über eine geschützte Admin-Cloud-Function.
 
 ## Admin Center
 
 Das Admin Center unterstützt:
+- alle Firebase-Auth-Konten suchen und anzeigen
+- Tags einzeln oder in Bulk hinzufügen/entfernen
+- Admin-Tags nach Serverprüfung vergeben
+- Konten aktivieren/deaktivieren
+- CSV-Export und den JDNEXT-Wartungsmodus
 
-- Accounts manuell erstellen
-- Accounts suchen
-- Tags hinzufügen und entfernen
-- Tags als Bulk-Aktion ändern
-- Accounts deaktivieren und aktivieren
-- UID anzeigen und kopieren
-- CSV-Export
-- JDNEXT-Hausaufgaben-Monitor für `next-untis-plus`
-
-## JDNEXT
-
-JDNEXT verwendet weiterhin das alte Firebase-Projekt `next-untis-plus`.
-
-- Stundenplan und Hausaufgaben lesen: ohne TobiServices-Account
-- Hausaufgaben posten: ohne TobiServices-Account
-- Meldungen: anonyme Firebase-Identität im Hintergrund
-- TobiServices wird nur für eigene accountbezogene Funktionen benötigt
-
-Die JDNEXT-API-Konfiguration ist unabhängig vom TobiServices-Projekt.
+Die nicht verlinkte Seite `account-setup-7f3c.html` in JDNEXT-UI verwendet ebenfalls E-Mail-/Passwort-Login und erlaubt Tag-Änderungen nur, wenn der angemeldete Benutzer den `admin`-Tag besitzt. `noindex` und der versteckte Pfad sind keine Sicherheitsgrenze; entscheidend sind die serverseitigen Prüfungen.
 
 ## Sicherheit
 
-- Passwortprüfung nur serverseitig
-- scrypt mit zufälligem Salt
-- Passwort-Hash und Salt sind für normale Clients nicht lesbar
-- `tobiAccounts` ist komplett durch Firestore Rules gesperrt
-- Admin-Aktionen laufen über geschützte Callable Functions
-- eigene Admin-Rolle kann nicht versehentlich vom letzten Admin entfernt werden
-- deaktivierte Accounts werden bei der Anmeldung abgewiesen
-
-Firebase beschreibt Custom Tokens als serverseitig erzeugte Tokens, die anschließend mit `signInWithCustomToken()` am Client verwendet werden können.
+- E-Mail-/Passwort-Anmeldung über Firebase Authentication.
+- Passwörter werden nicht in Firestore-Tags, Profilen oder JDNEXT UI gespeichert.
+- `users` darf nicht vom Browser beschrieben werden; Profile werden durch geschützte Cloud Functions verwaltet.
+- `tobiAccounts` bleibt komplett durch Firestore Rules gesperrt.
+- Admin-Cloud-Functions verlangen eine gültige Firebase-Auth-Sitzung und lesen den `admin`-Tag aus `users/{uid}`.
+- Tags können nicht durch `ensureUserProfile` selbst vergeben werden; neue Profile erhalten `tags: []`.
+- Deaktivieren und Tag-Änderungen laufen über das Backend.
