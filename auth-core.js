@@ -1,8 +1,8 @@
 /* TobiServices Account Core
-   Benutzerdefinierte Username/Passwort-Accounts.
-   Firebase Authentication wird nur als interne, passwortlose Sitzung
-   mit Custom Tokens verwendet. Passwortprüfung und Accountverwaltung
-   passieren ausschließlich serverseitig über Cloud Functions. */
+   Neue Accounts verwenden direkt Firebase Authentication (E-Mail/Passwort).
+   Das Rollenprofil wird über geschützte Cloud Functions geladen/erstellt;
+   Admin-Rechte kommen ausschließlich aus serverseitig geprüften Tags.
+   loginLegacy bleibt für ältere Username/Passwort-Konten verfügbar. */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
