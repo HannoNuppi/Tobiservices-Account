@@ -79,9 +79,9 @@ Die bestehende Discord-Bild-Upload-Funktion von JDNEXT ist davon getrennt und ve
 
 ## Einschränkungen ohne Blaze
 
-Der Spark-Betrieb kann keine Cloud Functions verwenden. Daher kann die Webseite die Firebase-Auth-User-Verwaltung nicht wie die Admin SDK-Funktionen bedienen: Das Admin Center zeigt initialisierte TobiServices-Profile statt einer vollständigen Liste jedes Auth-Kontos. Die Sperrfunktion sperrt den Zugriff auf unterstützende TobiServices-Websites, nicht die Anmeldung bei Firebase Authentication selbst.
+Das Spark-Modell kann die Konten in Firebase Authentication nicht mit dem Admin SDK deaktivieren. Die JDNEXT-Straflogik setzt deshalb `users/{uid}.disabled = true`; das ist eine Dienstsperre, keine Abschaltung des Authentication-Logins. Alle angebundenen TobiServices-Dienste müssen dieses Feld beachten. Die Hausaufgaben-, Report- und Münzlogik wird durch Firestore Rules geprüft und benötigt keine Cloud Functions.
 
-GitHub Pages liefert statische Dateien aus. Ein clientseitiger Beta-Bildschirm ist deshalb keine Geheimhaltung für HTML-/JavaScript-Dateien; wirklich private Daten müssen in Firestore oder einem anderen Serverdienst durch Regeln/Zugriffskontrollen geschützt werden.
+GitHub Pages liefert statische Dateien aus. Ein clientseitiger Beta-Bildschirm ist deshalb keine Geheimhaltung für HTML-/JavaScript-Dateien; private Daten müssen durch Firestore-Regeln geschützt werden.
 
 ## GitHub Pages
 
