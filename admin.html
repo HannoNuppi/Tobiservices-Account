@@ -32,16 +32,8 @@
   </div>
 
   <section class="jd-card" id="createCard" style="margin-top:16px;display:none">
-    <h3>Account manuell anlegen</h3>
-    <p>Username und Passwort werden serverseitig verarbeitet. Es ist keine E-Mail-Adresse nötig.</p>
-    <form id="createForm">
-      <div class="form-grid">
-        <input class="jd-input" id="newUsername" maxlength="32" placeholder="Username" autocomplete="off" required>
-        <input class="jd-input" id="newDisplayName" maxlength="40" placeholder="Anzeigename (optional)" autocomplete="off">
-        <input class="jd-input" id="newPassword" maxlength="128" minlength="8" type="password" placeholder="Passwort (min. 8 Zeichen)" autocomplete="new-password" required>
-      </div>
-      <div class="actions"><button class="jd-btn" id="createBtn">Account erstellen</button></div>
-    </form>
+    <h3>Firebase-Accounts</h3>
+    <p>Neue Accounts werden direkt in Firebase Console → Authentication angelegt. Alle dort vorhandenen Konten werden hier angezeigt; dieser Bereich verwaltet ausschließlich Tags und Status, keine separaten TobiServices-Passwörter.</p>
   </section>
 
   <section class="jd-card" id="accountsCard" style="margin-top:14px;display:none">
@@ -98,7 +90,7 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,createAccount,setDisabled,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
+import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore,collection,getDocs,doc,getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -131,7 +123,7 @@ function renderUsers(){
   const q=($("#q").value||"").trim().toLowerCase(),filter=$("#tagFilter").value;
   const shown=users.filter(function(u){
     const tags=Array.isArray(u.tags)?u.tags:[];
-    const hay=((u.username||"")+" "+(u.displayName||"")+" "+u.uid).toLowerCase();
+    const hay=((u.email||"")+" "+(u.username||"")+" "+(u.displayName||"")+" "+u.uid).toLowerCase();
     return (!q||hay.includes(q))&&(!filter||tags.includes(filter));
   });
   const root=$("#userList");
@@ -150,8 +142,8 @@ function renderUsers(){
   shown.forEach(function(u){
     const card=document.querySelector("[data-uid=\""+CSS.escape(u.uid)+"\"]");
     if(!card)return;
-    card.querySelector(".username").textContent=u.displayName||u.username||"(ohne Namen)";
-    card.querySelector(".uname").textContent="@"+(u.username||"");
+    card.querySelector(".username").textContent=u.displayName||u.email||"(ohne Namen)";
+    card.querySelector(".uname").textContent=u.email||u.username||"(keine E-Mail)";
     card.querySelector(".uid").textContent=u.uid;
     (Array.isArray(u.tags)?u.tags:[]).forEach(function(tag){
       const chip=document.createElement("span");chip.className="chip";chip.textContent=tag+" ";
@@ -164,15 +156,6 @@ function renderUsers(){
 async function refreshUsers(){
   try{users=await listUsers();selected.clear();renderUsers();}
   catch(e){console.error(e);jdToast("Accounts konnten nicht geladen werden.");}
-}
-async function doCreate(e){
-  e.preventDefault();
-  const b=$("#createBtn");b.disabled=true;
-  try{
-    const data=await createAccount($("#newUsername").value.trim(),$("#newPassword").value,$("#newDisplayName").value.trim());
-    $("#createForm").reset();await refreshUsers();jdToast("Account "+data.username+" erstellt.");
-  }catch(err){console.error(err);jdToast(err?.message||"Account konnte nicht erstellt werden.");}
-  finally{b.disabled=false;}
 }
 $("#userList").addEventListener("click",async function(e){
   const card=e.target.closest("[data-uid]");if(!card)return;
@@ -197,7 +180,7 @@ $("#userList").addEventListener("click",async function(e){
     await setTags(u.uid,tags);u.tags=tags;renderUsers();jdToast("Tags gespeichert.");
   }catch(err){console.error(err);jdToast("Änderung wurde vom Server abgelehnt.");await refreshUsers();}
 });
-$("#q").oninput=renderUsers;$("#tagFilter").onchange=renderUsers;$("#refreshUsers").onclick=refreshUsers;$("#createForm").onsubmit=doCreate;
+$("#q").oninput=renderUsers;$("#tagFilter").onchange=renderUsers;$("#refreshUsers").onclick=refreshUsers;
 $("#clearSelection").onclick=function(){selected.clear();renderUsers();};
 $("#bulkAdd").onclick=function(){bulk(true)};$("#bulkRemove").onclick=function(){bulk(false)};
 async function bulk(add){
@@ -214,7 +197,7 @@ async function bulk(add){
   selected.clear();$("#bulkTag").value="";renderUsers();jdToast(n+" Accounts geändert.");
 }
 $("#exportCsv").onclick=function(){
-  const rows=[["UID","Username","Anzeigename","Tags","Deaktiviert"]].concat(users.map(function(u){return [u.uid,u.username||"",u.displayName||"",Array.isArray(u.tags)?u.tags.join("|"):"",u.disabled?"ja":"nein"];}));
+  const rows=[["UID","E-Mail","Anzeigename","Tags","Deaktiviert"]].concat(users.map(function(u){return [u.uid,u.email||"",u.displayName||"",Array.isArray(u.tags)?u.tags.join("|"):"",u.disabled?"ja":"nein"];}));
   const csv=rows.map(function(row){return row.map(function(v){return "\""+String(v).replace(/"/g,"\"\"")+"\"";}).join(",");}).join("\r\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="tobiservices-accounts.csv";a.click();
 };
