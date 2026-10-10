@@ -47,6 +47,7 @@
       <input class="jd-input" id="q" maxlength="100" placeholder="Username, Anzeigename oder UID suchen">
       <select class="jd-input" id="tagFilter"><option value="">Alle Tags</option></select>
       <button class="jd-btn-ghost" id="refreshUsers">Aktualisieren</button>
+      <button class="jd-btn-ghost" id="diagnoseBackend">Verbindung prüfen</button>
       <button class="jd-btn-ghost" id="exportCsv">CSV exportieren</button>
     </div>
     <div class="bulk" id="bulkBar">
@@ -57,6 +58,7 @@
       <button class="jd-btn-ghost" id="clearSelection">Auswahl löschen</button>
     </div>
     <div id="userList" class="user-list"></div>
+    <pre id="diagnosticOutput" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border-radius:10px;background:rgba(0,0,0,.22);border:1px solid var(--line);font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;margin-top:12px"></pre>
   </section>
 
   <section class="jd-card" style="margin-top:14px">
@@ -166,15 +168,72 @@ function renderUsers(){
   $("#selectedCount").textContent=selected.size+" ausgewählt";
   $("#bulkBar").classList.toggle("show",selected.size>0);
 }
+function errorDetails(error){
+  const details={
+    name:error?.name||"(kein Name)",
+    code:error?.code||"(kein Code)",
+    message:error?.message||"(keine Fehlermeldung)",
+    serverResponse:error?.customData?.serverResponse||error?.details||""
+  };
+  return Object.entries(details).filter(([,value])=>value!=="").map(([key,value])=>key+": "+String(value)).join("\\n");
+}
 async function refreshUsers(){
-  try{users=await listUsers();selected.clear();renderUsers();}
+  try{
+    users=await listUsers();
+    selected.clear();
+    renderUsers();
+    $("#status").textContent="Admin bestätigt · "+users.length+" Profile";
+  }
   catch(e){
-    console.error("Accounts konnten nicht vom Backend geladen werden:",e);
+    console.error("Firestore-Accountliste konnte nicht geladen werden:",e);
     const detail=backendErrorMessage(e);
-    $("#status").textContent=detail;
+    $("#status").textContent="Accountliste: "+detail;
+    const output=$("#diagnosticOutput");
+    if(output){
+      output.hidden=false;
+      output.textContent="Fehler beim Laden der Accountliste\\n"+errorDetails(e)+"\\n\\nKlicke auf „Verbindung prüfen“, um Profil-Lesen, Accountliste und Wartungsstatus getrennt zu testen.";
+    }
     jdToast(detail,6000);
   }
 }
+async function runDiagnostics(){
+  const button=$("#diagnoseBackend");
+  const output=$("#diagnosticOutput");
+  const lines=[];
+  button.disabled=true;
+  button.textContent="Prüfe …";
+  output.hidden=false;
+  const reportError=(name,error)=>lines.push("FEHLER · "+name+"\\n"+errorDetails(error));
+  try{
+    const user=auth.currentUser;
+    if(!user){
+      lines.push("FEHLER · Anmeldung\\nKein Firebase-User in auth.currentUser. Bitte abmelden und erneut anmelden.");
+    }else{
+      lines.push("Anmeldung OK\\nUID: "+user.uid+"\\nE-Mail: "+(user.email||"(nicht verfügbar)"));
+      try{
+        const profile=await getDoc(doc(tobiDb,"users",user.uid));
+        if(!profile.exists()) lines.push("FEHLER · Eigenes Profil\\nDas Dokument users/"+user.uid+" existiert nicht.");
+        else{
+          const data=profile.data()||{};
+          lines.push("Eigenes Profil OK\\nTags: "+JSON.stringify(data.tags||[])+"\\nAdmin-Tag: "+(Array.isArray(data.tags)&&data.tags.includes("admin")?"ja":"nein"));
+        }
+      }catch(error){reportError("Eigenes Profil lesen",error);}
+      try{
+        const items=await getDocs(collection(tobiDb,"users"));
+        lines.push("Accountliste OK\\nSichtbare Profile: "+items.size);
+      }catch(error){reportError("Accountliste lesen",error);}
+      try{
+        const status=await getDoc(doc(tobiDb,"siteSettings","jdnext"));
+        lines.push("Wartungsstatus lesen OK\\nDokument vorhanden: "+status.exists());
+      }catch(error){reportError("Wartungsstatus lesen",error);}
+    }
+  }catch(error){reportError("Diagnose",error);}
+  output.textContent=lines.join("\\n\\n");
+  button.disabled=false;
+  button.textContent="Verbindung prüfen";
+  console.info("TobiServices Admin Diagnose\\n"+output.textContent);
+}
+$("#diagnoseBackend").onclick=runDiagnostics;
 $("#userList").addEventListener("click",async function(e){
   const card=e.target.closest("[data-uid]");if(!card)return;
   const u=users.find(function(x){return x.uid===card.dataset.uid;});if(!u)return;
