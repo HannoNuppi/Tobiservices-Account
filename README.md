@@ -1,55 +1,41 @@
-# TobiServices Account Center
+# TobiServices Account Center (Firebase Spark)
 
-Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Neue Konten werden direkt über **Firebase Authentication (E-Mail + Passwort)** verwaltet. Rollen wie `admin` werden ausschließlich über das serverseitig geprüfte Tag-Profil gesteuert.
+Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Die Browser-Clients verwenden Firebase Authentication und Firestore direkt, sodass die aktuellen Funktionen **keine Cloud Functions und keinen Blaze-Tarif** benötigen.
 
-## Konten und Anmeldung
+## Einmalige Einrichtung ohne Terminal
 
-- Neue Accounts werden im Firebase-Projekt `tobiservices` unter **Authentication → Users** angelegt.
-- Websites verwenden Firebase Authentication für E-Mail-/Passwort-Anmeldung.
-- Beim ersten Login wird über die geschützte Cloud Function `ensureUserProfile` das Profil `users/{uid}` erzeugt, falls es noch nicht existiert. Neue Profile beginnen immer ohne Tags.
-- Berechtigungen werden über `users/{uid}.tags` entschieden. Nur ein Profil mit dem Tag `admin` erhält Admin-Rechte.
-- Das Admin Center listet die Firebase-Authentication-Konten und verwaltet deren Tags. Es muss kein zweites Passwort-System in `tobiAccounts` gepflegt werden.
-- Legacy-Accounts mit TobiServices-Benutzername können vorerst über `loginLegacy()` weiter unterstützt werden. Neue Seiten sollen `login(email, password)` verwenden.
+1. Öffne die [Firebase Console](https://console.firebase.google.com/) und wähle das Projekt `tobiservices`.
+2. Unter **Authentication → Sign-in method** muss **E-Mail/Passwort** aktiviert sein. Neue Nutzer legst du unter **Authentication → Users** an.
+3. Öffne **Firestore Database → Rules**.
+4. Ersetze dort die Regeln durch den Inhalt von [`firestore.rules`](https://github.com/HannoNuppi/Tobiservices-Account/blob/main/firestore.rules) und klicke auf **Publish**. Diese Schritte benötigen kein lokales Projektverzeichnis und keinen Cloud-Functions-Deploy.
+5. Öffne das Admin Center neu und melde dich mit dem Konto an, dessen Dokument `users/{UID}` bereits `tags: ["admin"]` hat.
 
-## Firebase-Einrichtung
+**Achtung:** Die Regeln sind die Sicherheitsgrenze für Tag-Verwaltung und Guthaben. Veröffentliche nicht versehentlich permissive Regeln wie `allow read, write: if true`.
 
-Im lokalen Projektordner:
+## So funktioniert das Spark-kompatible Modell
 
-1. Firebase CLI installieren und mit deinem Firebase-Konto anmelden.
-2. Projekt `tobiservices` auswählen.
-3. Prüfen, dass E-Mail/Passwort unter Firebase Authentication → Sign-in method aktiviert ist.
-4. Backend und Firestore-Regeln deployen:
+- Neue Firebase-Auth-Nutzer erhalten beim ersten erfolgreichen Profil-Lesevorgang ein Firestore-Profil `users/{UID}`, falls es noch fehlt. Die Regeln erlauben dabei nur `tags: []` und `goldCoins: 0`.
+- Das Admin Center listet nur Profile aus `users`. Ein Konto, das nur in Firebase Authentication angelegt und noch nie bei einem TobiServices-Dienst angemeldet wurde, erscheint erst nach dem ersten Login.
+- Bestehende Admins dürfen Tags verwalten, den TobiServices-Dienstzugriff sperren/freigeben und den JDNEXT-Wartungsstatus ändern. Firestore Rules überprüfen die Admin-Rolle bei jedem solchen Schreibzugriff.
+- Der Schalter **Dienste sperren** setzt `users/{UID}.disabled = true`. Das deaktiviert nicht das Firebase-Authentication-Konto an sich; jede angebundene Website muss das Feld beachten.
+- Ältere Username/Passwort-Konten und die in `functions/index.js` verbliebenen Callable Functions werden im Spark-Client nicht verwendet.
 
-   `firebase deploy --only functions,firestore`
+## Ersten Admin einrichten
 
-Beim Deploy kann Firebase fragen, ob die alte Function `bootstrapTobiAdmin` entfernt werden soll. Bestätige die Entfernung, damit der nicht mehr verwendete Bootstrap-Key-Endpunkt nicht als alte deployed Function weiterbesteht.
+Die erste Admin-Rolle muss einmalig über die vertrauenswürdige Firebase Console eingerichtet werden:
 
-Cloud Functions benötigen laut der Projektkonfiguration den Firebase-Blaze-Tarif.
+1. Unter Authentication → Users die eigene UID kopieren.
+2. Unter Firestore Database → Data die Collection `users` öffnen.
+3. Ein Dokument mit genau dieser UID als Dokument-ID anlegen bzw. öffnen.
+4. `tags` als Array mit einem String-Element `admin` setzen. Ergänze `email`, `displayName`, `authProvider = "firebase-auth"` und für neue Profile `goldCoins = 0`, `createdAt`, `lastProfileChangeAt`.
 
-## Ersten Admin sicher einrichten
+Die Firebase Console ist eine vertrauenswürdige Verwaltungsschnittstelle. **Nie** clientseitige Schreibrechte auf die Tags oder Rollen öffnen. Nach Einrichtung der ersten Admin-Rolle können weitere Tag-Änderungen im Admin Center stattfinden.
 
-Der alte Bootstrap-Key ist nicht mehr erforderlich und wird nicht mehr durch den aktuellen Backend-Code verwendet. Für das erste Admin-Konto wird die Rolle einmalig direkt über die vertrauenswürdige **Firebase Console** vergeben:
-
-1. Firebase Console → Authentication → Users öffnen.
-2. Das eigene Konto auswählen und dessen vollständige UID kopieren.
-3. Firestore Database → Collection `users` öffnen.
-4. Falls noch kein Dokument existiert, ein Dokument mit genau dieser UID als Dokument-ID anlegen. Existiert es schon, nur die Felder ergänzen/aktualisieren.
-5. Die Felder setzen:
-   - `email` — String mit der E-Mail-Adresse
-   - `displayName` — String mit dem Anzeigenamen
-   - `tags` — Array mit einem String-Element: `admin`
-   - `createdAt` — Timestamp (beim neuen Dokument)
-   - `lastProfileChangeAt` — Timestamp
-
-Die Firestore Console benutzt ein vertrauenswürdiges Projekt-Owner/Admin-Konto und umgeht die Client-Regeln für diese manuelle Erstinitialisierung. **Nie** Client-Schreibrechte auf Rollen oder Tags öffnen. Danach können Admins die Tags über die geschützten Cloud Functions verwalten.
-
-Es gibt absichtlich keinen öffentlichen Endpunkt, über den unangemeldete Besucher sich selbst oder andere Accounts zu Admins machen könnten.
-
-## Firestore-Datenstruktur
+## Firestore-Profil und gemeinsame Goldmünzen
 
 ### `users/{uid}`
 
-Profil für ein Firebase-Authentication-Konto. Die ID muss exakt der Firebase-Auth-UID entsprechen.
+Die UID des Dokuments muss exakt zur Firebase-Authentication-UID gehören. Beispiel:
 
 ```json
 {
@@ -57,61 +43,26 @@ Profil für ein Firebase-Authentication-Konto. Die ID muss exakt der Firebase-Au
   "displayName": "Beispiel",
   "tags": [],
   "goldCoins": 0,
-  "authProvider": "firebase-auth",
-  "createdAt": "<Firestore Timestamp>",
-  "lastProfileChangeAt": "<Firestore Timestamp>"
+  "authProvider": "firebase-auth"
 }
 ```
 
-Das Profil wird von `ensureUserProfile` mit leeren Tags angelegt. Admin-Funktionen werden nicht über vom Client übermittelte Tags freigeschaltet, sondern lesen die gespeicherten Tags serverseitig.
-
-### Gemeinsame Goldmünzen
-
-`users/{uid}.goldCoins` ist das gemeinsame Goldmünzen-Guthaben des Kontos für alle TobiServices-Dienste. Es wird als nicht-negative Ganzzahl gespeichert und beginnt bei `0`. Bestehende Profile ohne dieses Feld werden beim Profil-Ladevorgang über `ensureUserProfile` ergänzt. Dienste sollen dieses zentrale Feld verwenden und keinen eigenen Münzestand in lokalen Speicher oder service-spezifische Dokumente legen.
-
-Es ist absichtlich noch keine Funktion zum Verdienen, Gutschreiben oder Ausgeben von Goldmünzen implementiert. Die Clients können `users` nicht beschreiben; spätere Änderungen müssen über vertrauenswürdige, serverseitig autorisierte Funktionen erfolgen.
-
-### `tobiAccounts/{usernameKey}` (Legacy)
-
-Diese Collection hält eventuell noch alte Username/Passwort-Konten. Passwort-Hashes und Salts sind geschützt und dürfen nicht an Browser ausgeliefert werden. Neue E-Mail-Konten benötigen keinen Eintrag in dieser Collection. Wenn ein Legacy-Account existiert, synchronisiert `setTobiTags` dessen Tags weiterhin.
+`users/{uid}.goldCoins` ist das gemeinsame Guthaben über alle TobiServices-Dienste. Es wird als nicht-negative Ganzzahl gespeichert. Die veröffentlichten Regeln erlauben einem Kontoinhaber nur, ein bislang fehlendes Feld einmalig auf `0` zu initialisieren. Reguläre Browser-Clients können einen bestehenden Kontostand nicht verändern. Es gibt noch keine Verdien- oder Ausgabefunktion.
 
 ### `siteSettings/jdnext`
 
-Der Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt; Änderungen erfolgen ausschließlich über eine geschützte Admin-Cloud-Function.
+Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt, Änderungen dürfen nur von Admins erfolgen.
 
-## Admin-Backend prüfen
+### `tobiAccounts/{usernameKey}` (Legacy)
 
-Das Admin Center ruft die Callable Cloud Functions `listTobiUsers`, `setTobiTags`, `setTobiDisabled` und `setMaintenanceMode` in `europe-west1` auf. Wenn im Admin Center `Backend-Funktion wurde nicht gefunden` angezeigt wird, läuft wahrscheinlich noch ein älterer Deployment-Stand. Die Dateien im GitHub-Repository werden durch einen Commit **nicht automatisch** in Firebase bereitgestellt.
+Die alte Username/Passwort-Collection bleibt für Browser vollständig gesperrt.
 
-Im Browser-Cloud-Shell-Terminal kann der aktuelle Stand ohne lokalen PC-Ordner bereitgestellt werden:
+## Einschränkungen ohne Blaze
 
-```bash
-git clone https://github.com/HannoNuppi/Tobiservices-Account.git
-cd Tobiservices-Account
-npm install -g firebase-tools
-firebase login --no-localhost
-firebase deploy --project tobiservices --only functions,firestore
-```
+Der Spark-Betrieb kann keine Cloud Functions verwenden. Daher kann die Webseite die Firebase-Auth-User-Verwaltung nicht wie die Admin SDK-Funktionen bedienen: Das Admin Center zeigt initialisierte TobiServices-Profile statt einer vollständigen Liste jedes Auth-Kontos. Die Sperrfunktion sperrt den Zugriff auf unterstützende TobiServices-Websites, nicht die Anmeldung bei Firebase Authentication selbst.
 
-Cloud Functions benötigen die passenden Projektberechtigungen und den von Firebase geforderten Abrechnungstarif. Nach dem Deploy die Seite neu laden. Wenn das Backend weiterhin fehlschlägt, den im Admin Center angezeigten Fehlercode und die Cloud-Functions-Logs prüfen.
+GitHub Pages liefert statische Dateien aus. Ein clientseitiger Beta-Bildschirm ist deshalb keine Geheimhaltung für HTML-/JavaScript-Dateien; wirklich private Daten müssen in Firestore oder einem anderen Serverdienst durch Regeln/Zugriffskontrollen geschützt werden.
 
-## Admin Center
+## GitHub Pages
 
-Das Admin Center unterstützt:
-- alle Firebase-Auth-Konten suchen und anzeigen
-- Tags einzeln oder in Bulk hinzufügen/entfernen
-- Admin-Tags nach Serverprüfung vergeben
-- Konten aktivieren/deaktivieren
-- CSV-Export und den JDNEXT-Wartungsmodus
-
-Die nicht verlinkte Seite `account-setup-7f3c.html` in JDNEXT-UI verwendet ebenfalls E-Mail-/Passwort-Login und erlaubt Tag-Änderungen nur, wenn der angemeldete Benutzer den `admin`-Tag besitzt. `noindex` und der versteckte Pfad sind keine Sicherheitsgrenze; entscheidend sind die serverseitigen Prüfungen.
-
-## Sicherheit
-
-- E-Mail-/Passwort-Anmeldung über Firebase Authentication.
-- Passwörter werden nicht in Firestore-Tags, Profilen oder JDNEXT UI gespeichert.
-- `users` darf nicht vom Browser beschrieben werden; Profile werden durch geschützte Cloud Functions verwaltet.
-- `tobiAccounts` bleibt komplett durch Firestore Rules gesperrt.
-- Admin-Cloud-Functions verlangen eine gültige Firebase-Auth-Sitzung und lesen den `admin`-Tag aus `users/{uid}`.
-- Tags können nicht durch `ensureUserProfile` selbst vergeben werden; neue Profile erhalten `tags: []`.
-- Deaktivieren und Tag-Änderungen laufen über das Backend.
+Die Website-Dateien werden bei aktivierter GitHub-Pages-Konfiguration von `main` veröffentlicht. Für die Spark-kompatible Version ist kein `firebase deploy --only functions` erforderlich. Die Firestore-Regeln müssen einmalig in der Firebase Console veröffentlicht werden.
