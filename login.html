@@ -38,12 +38,15 @@ let busy=false;
 
 function showError(error){
   console.error(error);
-  const code=error?.code||"";
-  if(code.includes("unauthenticated")){
+  const code=String(error?.code||"");
+  if(code.includes("unauthenticated")||code.includes("auth/invalid-credential")||code.includes("auth/invalid-login-credentials")){
     return jdToast("E-Mail-Adresse oder Passwort ist falsch.");
   }
-  if(code.includes("unavailable") || code.includes("failed-precondition")){
-    return jdToast("TobiServices-Server ist noch nicht bereit oder nicht erreichbar.");
+  if(code.includes("auth/too-many-requests")){
+    return jdToast("Zu viele Anmeldeversuche. Bitte warte einen Moment.");
+  }
+  if(code.includes("unavailable") || code.includes("failed-precondition") || code.includes("auth/network-request-failed")){
+    return jdToast("Firebase-Accountdienst ist noch nicht bereit oder nicht erreichbar.");
   }
   jdToast("Anmeldung fehlgeschlagen.");
 }
