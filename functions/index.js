@@ -72,6 +72,17 @@ async function ensureTobiSetupDocuments() {
           }
         }
       });
+    } else {
+      // Add the shared currency field to schema metadata for already-initialized projects.
+      transaction.set(schemaRef, {
+        collections: {
+          users: {
+            fields: {
+              goldCoins: "non-negative integer; shared server-managed TobiServices balance; defaults to 0"
+            }
+          }
+        }
+      }, { merge: true });
     }
 
     if (!maintenanceSnap.exists) {
