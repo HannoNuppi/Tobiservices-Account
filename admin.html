@@ -149,7 +149,7 @@ function renderUsers(){
     return "<div class=\"jd-card\" data-uid=\""+escapeHtml(u.uid)+"\">"+
       "<div style=\"display:flex;gap:10px\"><input class=\"check\" type=\"checkbox\" "+(selected.has(u.uid)?"checked":"")+"><div>"+
       "<h3 class=\"username\"></h3><p class=\"uname\"></p><div class=\"mono uid\"></div></div></div>"+
-      "<div class=\"chips\"></div><div class=\"actions coin-actions\"><label>Goldmünzen <input class=\"jd-input coinInput\" type=\"number\" min=\"0\" max=\"9007199254740991\" step=\"1\" inputmode=\"numeric\"></label><button class=\"jd-btn-ghost\" data-save-coins>Saldo speichern</button></div><div class=\"actions\">"+
+      "<div class=\"chips\"></div><div class=\"actions coin-actions\"><label>Goldmünzen <input class=\"jd-input coinInput\" type=\"number\" min=\"-9007199254740991\" max=\"9007199254740991\" step=\"1\" inputmode=\"numeric\"></label><button class=\"jd-btn-ghost\" data-save-coins>Saldo speichern</button></div><div class=\"actions\">"+
       "<input class=\"jd-input tagInput\" maxlength=\"24\" placeholder=\"Tag hinzufügen\">"+
       "<button class=\"jd-btn-ghost\" data-add>Hinzufügen</button>"+
       "<button class=\"jd-btn-ghost\" data-copy>UID kopieren</button>"+
@@ -163,7 +163,7 @@ function renderUsers(){
     card.querySelector(".username").textContent=u.displayName||u.email||"(ohne Namen)";
     card.querySelector(".uname").textContent=u.email||u.username||"(keine E-Mail)";
     card.querySelector(".uid").textContent=u.uid;
-    card.querySelector(".coinInput").value=String(Number.isSafeInteger(u.goldCoins)&&u.goldCoins>=0?u.goldCoins:0);
+    card.querySelector(".coinInput").value=String(Number.isSafeInteger(u.goldCoins)?u.goldCoins:0);
     (Array.isArray(u.tags)?u.tags:[]).forEach(function(tag){
       const chip=document.createElement("span");chip.className="chip";chip.append(tag+" ");
       if(tag==="admin"&&u.uid===auth.currentUser?.uid){
@@ -253,7 +253,7 @@ $("#userList").addEventListener("click",async function(e){
       const input=card.querySelector(".coinInput");
       const raw=input.value.trim();
       const amount=Number(raw);
-      if(raw===""||!Number.isSafeInteger(amount)||amount<0)return jdToast("Bitte eine nicht-negative ganze Zahl für Goldmünzen eingeben.");
+      if(raw===""||!Number.isSafeInteger(amount))return jdToast("Bitte eine ganze Zahl für Goldmünzen eingeben.");
       await setGoldCoins(u.uid,amount);
       u.goldCoins=amount;
       renderUsers();
