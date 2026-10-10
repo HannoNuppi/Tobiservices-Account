@@ -3,24 +3,74 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // TobiServices profile data. Password material and account control data
-    // are stored in tobiAccounts and are never exposed to clients.
-    match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow create, update, delete: if false;
+    function signedIn() {
+      return request.auth != null;
     }
 
+    function ownProfile(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags is list
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags.hasAny(['admin']);
+    }
+
+    match /users/{uid} {
+      // A user can read their own profile. Admins can view/list initialized profiles.
+      allow get: if ownProfile(uid) || isAdmin();
+      allow list: if isAdmin();
+
+      // A new account may create only its own harmless default profile.
+      // It cannot choose roles, currency or disabled state.
+      allow create: if ownProfile(uid)
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'tags', 'goldCoins',
+          'authProvider', 'createdAt', 'lastProfileChangeAt'
+        ])
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && request.resource.data.tags == []
+        && request.resource.data.goldCoins == 0
+        && request.resource.data.authProvider == 'firebase-auth';
+
+      // Admins can change tags and service-level disabled state, but not the
+      // shared gold coin balance. A profile owner may initialize a missing
+      // goldCoins field to 0 once; afterward nobody can write that field here.
+      allow update: if (
+        isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'tags', 'disabled', 'lastProfileChangeAt', 'email',
+          'displayName', 'username', 'authProvider'
+        ])
+        && (uid != request.auth.uid
+          || (request.resource.data.tags is list
+            && request.resource.data.tags.hasAny(['admin'])))
+      ) || (
+        ownProfile(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goldCoins'])
+        && !('goldCoins' in resource.data)
+        && request.resource.data.goldCoins == 0
+      );
+
+      allow delete: if false;
+    }
+
+    // Legacy username/password records stay inaccessible from all browsers.
     match /tobiAccounts/{usernameKey} {
       allow read, write: if false;
     }
 
-    // Öffentlicher JDNEXT-Wartungsstatus. Änderungen sind nur über die
-    // serverseitige Admin-Funktion möglich.
+    // Public maintenance status; only existing admins can change it.
     match /siteSettings/jdnext {
       allow read: if true;
-      allow write: if false;
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
+    // Schema metadata and all other data are not client-accessible.
     match /{document=**} {
       allow read, write: if false;
     }
