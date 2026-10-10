@@ -1,6 +1,5 @@
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
 const { onInit } = require("firebase-functions/v2/core");
 const { setGlobalOptions } = require("firebase-functions/v2/options");
 const { logger } = require("firebase-functions");
@@ -16,7 +15,6 @@ setGlobalOptions({
 
 const db = getFirestore();
 const adminAuth = getAuth();
-const BOOTSTRAP_KEY = defineSecret("TOBI_BOOTSTRAP_KEY");
 
 const USERNAME_RE = /^[a-zA-Z0-9._-]{3,32}$/;
 const PASSWORD_MIN = 8;
@@ -211,6 +209,49 @@ async function mintToken(account, uid) {
   });
 }
 
+
+/**
+ * Ensure an authenticated Firebase email/password user has a tag profile.
+ * Newly imported/directly-created Firebase Auth users start with no tags.
+ * A user can never choose their own tags through this function.
+ */
+exports.ensureUserProfile = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Anmeldung erforderlich.");
+  }
+
+  const authUser = await adminAuth.getUser(uid);
+  const profileRef = db.doc("users/" + uid);
+  const profileSnap = await profileRef.get();
+
+  if (!profileSnap.exists) {
+    await profileRef.create({
+      email: authUser.email || "",
+      displayName: authUser.displayName || "",
+      tags: [],
+      createdAt: FieldValue.serverTimestamp(),
+      lastProfileChangeAt: FieldValue.serverTimestamp(),
+      authProvider: "firebase-auth"
+    }).catch(async error => {
+      // A concurrent login may have created the profile after our read.
+      if (error.code !== 6 && error.code !== "already-exists") throw error;
+    });
+  } else {
+    const existing = profileSnap.data() || {};
+    const patch = {};
+    if (typeof existing.email !== "string" && authUser.email) patch.email = authUser.email;
+    if (typeof existing.displayName !== "string" && authUser.displayName) patch.displayName = authUser.displayName;
+    if (!Array.isArray(existing.tags)) patch.tags = [];
+    if (Object.keys(patch).length) {
+      await profileRef.set(patch, { merge: true });
+    }
+  }
+
+  const finalSnap = await profileRef.get();
+  return { profile: { uid, ...(finalSnap.data() || {}) } };
+});
+
 exports.loginTobiAccount = onCall(async (request) => {
   const username = cleanUsername(request.data?.username);
   const password = request.data?.password;
@@ -247,80 +288,9 @@ exports.loginTobiAccount = onCall(async (request) => {
   };
 });
 
-exports.bootstrapTobiAdmin = onCall({ secrets: [BOOTSTRAP_KEY] }, async (request) => {
-  const suppliedKey = String(request.data?.bootstrapKey ?? "");
-  const expectedKey = String(BOOTSTRAP_KEY.value());
-
-  if (!expectedKey || suppliedKey !== expectedKey) {
-    throw new HttpsError("permission-denied", "Bootstrap-Schlüssel ist falsch.");
-  }
-
-  const username = cleanUsername(request.data?.username);
-  const password = request.data?.password;
-  const displayName = cleanDisplayName(request.data?.displayName) || username;
-
-  assertValidCredentials(username, password);
-
-  const existingAdmins = await db
-    .collection("tobiAccounts")
-    .where("tags", "array-contains", "admin")
-    .limit(1)
-    .get();
-
-  if (!existingAdmins.empty) {
-    throw new HttpsError("already-exists", "Es existiert bereits ein Admin-Account.");
-  }
-
-  const key = usernameKey(username);
-  const ref = db.doc("tobiAccounts/" + key);
-  const existing = await ref.get();
-
-  if (existing.exists) {
-    throw new HttpsError("already-exists", "Dieser Username ist bereits vergeben.");
-  }
-
-  await ensureTobiSetupDocuments();
-
-  const uid = makeUid(key);
-  const passwordRecord = createPasswordRecord(password);
-
-  await adminAuth.createUser({
-    uid,
-    displayName
-  });
-
-  await ref.set({
-    username,
-    usernameKey: key,
-    displayName,
-    uid,
-    tags: ["admin"],
-    disabled: false,
-    ...passwordRecord,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp()
-  });
-
-  await db.doc("users/" + uid).set({
-    username,
-    displayName,
-    tags: ["admin"],
-    createdAt: FieldValue.serverTimestamp(),
-    lastProfileChangeAt: FieldValue.serverTimestamp()
-  });
-
-  const token = await mintToken({ tags: ["admin"] }, uid);
-
-  logger.info("TobiServices bootstrap admin created", {
-    username: key,
-    uid
-  });
-
-  return {
-    token,
-    profile: await buildProfile(uid)
-  };
-});
+// The old secret-key bootstrap endpoint was removed. To initialize the first
+// admin, an owner sets users/{uid}.tags = ["admin"] for a known Firebase Auth UID
+// directly in the trusted Firebase Console. All later changes go through setTobiTags.
 
 exports.createTobiAccount = onCall(async (request) => {
   const adminUid = await requireAdmin(request);
@@ -380,19 +350,35 @@ exports.createTobiAccount = onCall(async (request) => {
 exports.listTobiUsers = onCall(async (request) => {
   await requireAdmin(request);
 
-  const snap = await db.collection("users").limit(500).get();
+  const authUsers = [];
+  let pageToken;
+  do {
+    const page = await adminAuth.listUsers(1000, pageToken);
+    authUsers.push(...page.users);
+    pageToken = page.pageToken;
+  } while (pageToken && authUsers.length < 5000);
 
-  return {
-    users: snap.docs.map(doc => ({
-      uid: doc.id,
-      ...doc.data()
-    }))
-  };
+  const users = await Promise.all(authUsers.map(async user => {
+    const profileSnap = await db.doc("users/" + user.uid).get();
+    const profile = profileSnap.exists ? (profileSnap.data() || {}) : {};
+    return {
+      uid: user.uid,
+      email: user.email || profile.email || "",
+      username: profile.username || user.email || "",
+      displayName: profile.displayName || user.displayName || user.email || "",
+      tags: Array.isArray(profile.tags) ? profile.tags : [],
+      disabled: Boolean(user.disabled || profile.disabled),
+      createdAt: profile.createdAt || user.metadata.creationTime || null,
+      authProvider: profile.authProvider || "firebase-auth"
+    };
+  }));
+
+  users.sort((a, b) => String(a.email || a.username).localeCompare(String(b.email || b.username)));
+  return { users, truncated: Boolean(pageToken) };
 });
 
 exports.setTobiTags = onCall(async (request) => {
   const adminUid = await requireAdmin(request);
-
   const uid = String(request.data?.uid ?? "");
   const tags = normalizeTags(request.data?.tags);
 
@@ -401,26 +387,44 @@ exports.setTobiTags = onCall(async (request) => {
   }
 
   if (uid === adminUid && !tags.includes("admin")) {
-    throw new HttpsError("failed-precondition", "Du kannst deinen eigenen letzten Admin-Tag nicht entfernen.");
+    throw new HttpsError("failed-precondition", "Du kannst deinen eigenen Admin-Tag nicht entfernen.");
   }
+
+  let authUser;
+  try {
+    authUser = await adminAuth.getUser(uid);
+  } catch {
+    throw new HttpsError("not-found", "Firebase-Auth-Account nicht gefunden.");
+  }
+
+  const profileRef = db.doc("users/" + uid);
+  const profileSnap = await profileRef.get();
+  const profile = profileSnap.exists ? (profileSnap.data() || {}) : {};
 
   const accountSnap = await db.collection("tobiAccounts").where("uid", "==", uid).limit(1).get();
-  if (accountSnap.empty) {
-    throw new HttpsError("not-found", "TobiServices-Account nicht gefunden.");
+  const batch = db.batch();
+  batch.set(profileRef, {
+    email: authUser.email || profile.email || "",
+    username: profile.username || authUser.email || "",
+    displayName: profile.displayName || authUser.displayName || authUser.email || "",
+    tags,
+    lastProfileChangeAt: FieldValue.serverTimestamp(),
+    authProvider: profile.authProvider || "firebase-auth"
+  }, { merge: true });
+
+  if (!profileSnap.exists) {
+    batch.set(profileRef, { createdAt: FieldValue.serverTimestamp() }, { merge: true });
   }
 
-  const accountRef = accountSnap.docs[0].ref;
-  await accountRef.update({
-    tags,
-    updatedAt: FieldValue.serverTimestamp(),
-    updatedBy: adminUid
-  });
+  if (!accountSnap.empty) {
+    batch.update(accountSnap.docs[0].ref, {
+      tags,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: adminUid
+    });
+  }
 
-  await db.doc("users/" + uid).update({
-    tags,
-    lastProfileChangeAt: FieldValue.serverTimestamp()
-  });
-
+  await batch.commit();
   return { ok: true, uid, tags };
 });
 
@@ -452,33 +456,34 @@ exports.setTobiDisabled = onCall(async (request) => {
   if (!uid) {
     throw new HttpsError("invalid-argument", "UID fehlt.");
   }
-
   if (uid === adminUid && disabled) {
     throw new HttpsError("failed-precondition", "Du kannst deinen eigenen Account hier nicht deaktivieren.");
   }
 
-  const accountSnap = await db.collection("tobiAccounts").where("uid", "==", uid).limit(1).get();
-  if (accountSnap.empty) {
-    throw new HttpsError("not-found", "TobiServices-Account nicht gefunden.");
+  let authUser;
+  try {
+    authUser = await adminAuth.getUser(uid);
+  } catch {
+    throw new HttpsError("not-found", "Firebase-Auth-Account nicht gefunden.");
   }
 
-  const accountRef = accountSnap.docs[0].ref;
-  const account = accountSnap.docs[0].data();
-
-  await accountRef.update({
+  await adminAuth.updateUser(uid, { disabled });
+  await db.doc("users/" + uid).set({
+    email: authUser.email || "",
+    displayName: authUser.displayName || authUser.email || "",
     disabled,
-    updatedAt: FieldValue.serverTimestamp(),
-    updatedBy: adminUid
-  });
+    lastProfileChangeAt: FieldValue.serverTimestamp(),
+    authProvider: "firebase-auth"
+  }, { merge: true });
 
-  try {
-    await adminAuth.updateUser(uid, { disabled });
-  } catch (error) {
-    logger.warn("Firebase Auth user status could not be synchronized", {
-      uid,
-      error: String(error)
+  const accountSnap = await db.collection("tobiAccounts").where("uid", "==", uid).limit(1).get();
+  if (!accountSnap.empty) {
+    await accountSnap.docs[0].ref.update({
+      disabled,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: adminUid
     });
   }
 
-  return { ok: true, uid, disabled, username: account.username };
+  return { ok: true, uid, disabled, email: authUser.email || "" };
 });
