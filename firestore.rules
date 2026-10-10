@@ -2,13 +2,12 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
 
-    function signedIn() {
-      return request.auth != null;
-    }
+    function ownProfile(uid) { return signedIn() && request.auth.uid == uid; }
 
-    function ownProfile(uid) {
-      return signedIn() && request.auth.uid == uid;
+    function isAccountUser() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
     function isAdmin() {
@@ -18,13 +17,250 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags.hasAny(['admin']);
     }
 
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function homeworkPath(hwKey, entryId) {
+      return /databases/$(database)/documents/jdnextHomework/$(hwKey)/entries/$(entryId);
+    }
+
+    function homeworkOwnerPath(hwKey, entryId) {
+      return /databases/$(database)/documents/jdnextHomeworkPrivate/$(hwKey)/entries/$(entryId);
+    }
+
+    function reportPath(hwKey, entryId, reportUid) {
+      return /databases/$(database)/documents/jdnextHomework/$(hwKey)/entries/$(entryId)/reports/$(reportUid);
+    }
+
+    function coinEventPath(eventId) {
+      return /databases/$(database)/documents/jdnextCoinEvents/$(eventId);
+    }
+
+    function validPostBatch(uid, eventId) {
+      let eventAfter = getAfter(coinEventPath(eventId));
+      let d = eventAfter.data;
+      let entryPath = homeworkPath(d.hwKey, d.entryId);
+      let ownerPath = homeworkOwnerPath(d.hwKey, d.entryId);
+      let entryAfter = getAfter(entryPath);
+      let ownerAfter = getAfter(ownerPath);
+      let profileBefore = get(userPath(uid));
+      let profileAfter = getAfter(userPath(uid));
+
+      return signedIn()
+        && isAccountUser()
+        && request.auth.uid == uid
+        && eventId == 'reward-' + d.hwKey + '-' + d.entryId
+        && !exists(coinEventPath(eventId))
+        && d.uid == uid
+        && d.amount == 10
+        && d.type == 'homework-post'
+        && d.createdAt == request.time
+        && !exists(entryPath)
+        && !exists(ownerPath)
+        && existsAfter(entryPath)
+        && existsAfter(ownerPath)
+        && entryAfter.data.reportCount == 0
+        && ownerAfter.data.authorAuthUid == uid
+        && ownerAfter.data.authorTobiUid == uid
+        && exists(userPath(uid))
+        && (!('disabled' in profileBefore.data) || profileBefore.data.disabled != true)
+        && profileAfter.data.goldCoins == profileBefore.data.goldCoins + 10
+        && profileAfter.data.lastJdnextCoinEventId == eventId
+        && profileAfter.data.lastProfileChangeAt == request.time;
+    }
+
+    function validPenaltyBatch(uid, eventId) {
+      let eventAfter = getAfter(coinEventPath(eventId));
+      let d = eventAfter.data;
+      let entryPath = homeworkPath(d.hwKey, d.entryId);
+      let ownerPath = homeworkOwnerPath(d.hwKey, d.entryId);
+      let entryBefore = get(entryPath);
+      let ownerBefore = get(ownerPath);
+      let profileBefore = get(userPath(uid));
+      let profileAfter = getAfter(userPath(uid));
+
+      return signedIn()
+        && eventId == 'penalty-' + d.hwKey + '-' + d.entryId
+        && !exists(coinEventPath(eventId))
+        && d.uid == uid
+        && d.amount == -20
+        && d.type == 'homework-removal'
+        && d.createdAt == request.time
+        && entryBefore.data.reportCount is int
+        && entryBefore.data.reportCount >= 2
+        && ownerBefore.data.authorTobiUid == uid
+        && exists(userPath(uid))
+        && profileAfter.data.goldCoins == profileBefore.data.goldCoins - 20
+        && profileAfter.data.lastJdnextCoinEventId == eventId
+        && profileAfter.data.lastProfileChangeAt == request.time
+        && !existsAfter(entryPath)
+        && !existsAfter(ownerPath)
+        && (
+          (profileAfter.data.goldCoins <= -50 && profileAfter.data.disabled == true)
+          ||
+          (profileAfter.data.goldCoins > -50
+            && (
+              (('disabled' in profileBefore.data)
+                && profileBefore.data.disabled == true
+                && profileAfter.data.disabled == true)
+              ||
+              ((!('disabled' in profileBefore.data) || profileBefore.data.disabled != true)
+                && (!('disabled' in profileAfter.data) || profileAfter.data.disabled != true))
+            ))
+        );
+    }
+
+    function isValidOwnJdnextReward(uid) {
+      let eventId = request.resource.data.lastJdnextCoinEventId;
+      return request.resource.data.goldCoins == resource.data.goldCoins + 10
+        && request.resource.data.lastProfileChangeAt == request.time
+        && validPostBatch(uid, eventId);
+    }
+
+    function isValidJdnextPenalty(uid) {
+      let eventId = request.resource.data.lastJdnextCoinEventId;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'goldCoins', 'disabled', 'lastProfileChangeAt', 'lastJdnextCoinEventId'
+        ])
+        && validPenaltyBatch(uid, eventId);
+    }
+
+    function validRewardEvent(eventId) {
+      let d = request.resource.data;
+      let profileBefore = get(userPath(d.uid));
+      let profileAfter = getAfter(userPath(d.uid));
+      let entryPath = homeworkPath(d.hwKey, d.entryId);
+      let ownerPath = homeworkOwnerPath(d.hwKey, d.entryId);
+      let ownerAfter = getAfter(ownerPath);
+
+      return signedIn()
+        && isAccountUser()
+        && d.keys().hasAll(['uid', 'amount', 'type', 'hwKey', 'entryId', 'createdAt'])
+        && d.keys().hasOnly(['uid', 'amount', 'type', 'hwKey', 'entryId', 'createdAt'])
+        && d.uid == request.auth.uid
+        && d.amount == 10
+        && d.type == 'homework-post'
+        && d.hwKey is string
+        && d.entryId is string
+        && eventId == 'reward-' + d.hwKey + '-' + d.entryId
+        && d.createdAt == request.time
+        && !exists(coinEventPath(eventId))
+        && !exists(entryPath)
+        && !exists(ownerPath)
+        && existsAfter(entryPath)
+        && existsAfter(ownerPath)
+        && ownerAfter.data.authorAuthUid == d.uid
+        && ownerAfter.data.authorTobiUid == d.uid
+        && exists(userPath(d.uid))
+        && (!('disabled' in profileBefore.data) || profileBefore.data.disabled != true)
+        && profileAfter.data.goldCoins == profileBefore.data.goldCoins + 10
+        && profileAfter.data.lastJdnextCoinEventId == eventId
+        && profileAfter.data.lastProfileChangeAt == request.time;
+    }
+
+    function validPenaltyEvent(eventId) {
+      let d = request.resource.data;
+      return signedIn()
+        && d.keys().hasAll(['uid', 'amount', 'type', 'hwKey', 'entryId', 'createdAt'])
+        && d.keys().hasOnly(['uid', 'amount', 'type', 'hwKey', 'entryId', 'createdAt'])
+        && d.uid is string
+        && d.amount == -20
+        && d.type == 'homework-removal'
+        && d.hwKey is string
+        && d.entryId is string
+        && eventId == 'penalty-' + d.hwKey + '-' + d.entryId
+        && d.createdAt == request.time
+        && validPenaltyBatch(d.uid, eventId);
+    }
+
+    function validImage(image) {
+      return image is map
+        && image.keys().hasAll(['messageId', 'attachmentId', 'filename'])
+        && image.keys().hasOnly(['messageId', 'attachmentId', 'filename'])
+        && image.messageId is string
+        && image.attachmentId is string
+        && image.filename is string
+        && image.messageId.size() >= 15
+        && image.messageId.size() <= 25
+        && image.attachmentId.size() >= 15
+        && image.attachmentId.size() <= 25
+        && image.filename.size() <= 120;
+    }
+
+    function validImages(images) {
+      return images is list
+        && images.size() <= 3
+        && (images.size() < 1 || validImage(images[0]))
+        && (images.size() < 2 || validImage(images[1]))
+        && (images.size() < 3 || validImage(images[2]));
+    }
+
+    function validNewHomeworkEntry(hwKey, entryId) {
+      let d = request.resource.data;
+      let ownerPath = homeworkOwnerPath(hwKey, entryId);
+      let ownerAfter = getAfter(ownerPath);
+      let rewardEventId = 'reward-' + hwKey + '-' + entryId;
+
+      return signedIn()
+        && d.keys().hasAll(['text', 'author', 'images', 'reportCount', 'createdAt'])
+        && d.keys().hasOnly(['text', 'author', 'images', 'reportCount', 'createdAt'])
+        && d.text is string
+        && d.text.size() >= 3
+        && d.text.size() <= 1000
+        && d.author is string
+        && d.author.size() <= 80
+        && validImages(d.images)
+        && d.reportCount == 0
+        && d.createdAt == request.time
+        && !exists(homeworkPath(hwKey, entryId))
+        && !exists(ownerPath)
+        && existsAfter(ownerPath)
+        && ownerAfter.data.authorAuthUid == request.auth.uid
+        && (
+          (ownerAfter.data.authorTobiUid == null
+            && !existsAfter(coinEventPath(rewardEventId)))
+          ||
+          (ownerAfter.data.authorTobiUid == request.auth.uid
+            && isAccountUser()
+            && validPostBatch(request.auth.uid, rewardEventId))
+        );
+    }
+
+    function canIncrementReportCount(hwKey, entryId) {
+      let reporterPath = reportPath(hwKey, entryId, request.auth.uid);
+      return signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount'])
+        && resource.data.reportCount is int
+        && request.resource.data.reportCount == resource.data.reportCount + 1
+        && !exists(reporterPath)
+        && existsAfter(reporterPath)
+        && getAfter(reporterPath).data.createdAt == request.time;
+    }
+
+    function canRemoveHomework(hwKey, entryId) {
+      let ownerPath = homeworkOwnerPath(hwKey, entryId);
+      let owner = get(ownerPath);
+      let penaltyEventId = 'penalty-' + hwKey + '-' + entryId;
+      return signedIn()
+        && resource.data.reportCount is int
+        && resource.data.reportCount >= 2
+        && exists(ownerPath)
+        && (
+          (owner.data.authorTobiUid == null
+            && !existsAfter(coinEventPath(penaltyEventId)))
+          ||
+          (owner.data.authorTobiUid is string
+            && owner.data.authorTobiUid.size() > 0
+            && existsAfter(coinEventPath(penaltyEventId))
+            && validPenaltyBatch(owner.data.authorTobiUid, penaltyEventId))
+        );
+    }
+
     match /users/{uid} {
-      // A user can read their own profile. Admins can view/list initialized profiles.
       allow get: if ownProfile(uid) || isAdmin();
       allow list: if isAdmin();
 
-      // A new account may create only its own harmless default profile.
-      // It cannot choose roles, currency or disabled state.
       allow create: if ownProfile(uid)
         && request.resource.data.keys().hasOnly([
           'email', 'displayName', 'tags', 'goldCoins',
@@ -36,9 +272,6 @@ service cloud.firestore {
         && request.resource.data.goldCoins == 0
         && request.resource.data.authProvider == 'firebase-auth';
 
-      // Admins can manage tags, service access and existing coin balances.
-      // An admin's own admin tag cannot be removed, even by a direct client write.
-      // Only the signed-in admin may toggle their own maintenance bypass.
       allow update: if (
         isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -64,24 +297,95 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goldCoins'])
         && !('goldCoins' in resource.data)
         && request.resource.data.goldCoins == 0
+      ) || (
+        ownProfile(uid)
+        && isAccountUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'goldCoins', 'lastProfileChangeAt', 'lastJdnextCoinEventId'
+        ])
+        && isValidOwnJdnextReward(uid)
+      ) || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'goldCoins', 'disabled', 'lastProfileChangeAt', 'lastJdnextCoinEventId'
+        ])
+        && isValidJdnextPenalty(uid)
       );
 
       allow delete: if false;
     }
 
-    // Legacy username/password records stay inaccessible from all browsers.
+    match /jdnextHomework/{hwKey}/entries/{entryId} {
+      allow read: if true;
+      allow create: if validNewHomeworkEntry(hwKey, entryId);
+      allow update: if canIncrementReportCount(hwKey, entryId);
+      allow delete: if canRemoveHomework(hwKey, entryId);
+
+      match /reports/{reportUid} {
+        allow read: if false;
+        allow create: if signedIn()
+          && reportUid == request.auth.uid
+          && exists(homeworkPath(hwKey, entryId))
+          && exists(homeworkOwnerPath(hwKey, entryId))
+          && get(homeworkOwnerPath(hwKey, entryId)).data.authorAuthUid != request.auth.uid
+          && !exists(reportPath(hwKey, entryId, reportUid))
+          && request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt == request.time
+          && getAfter(homeworkPath(hwKey, entryId)).data.reportCount
+            == get(homeworkPath(hwKey, entryId)).data.reportCount + 1;
+        allow update, delete: if false;
+      }
+    }
+
+    match /jdnextHomeworkPrivate/{hwKey}/entries/{entryId} {
+      allow get: if exists(homeworkPath(hwKey, entryId))
+        && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['authorAuthUid', 'authorTobiUid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['authorAuthUid', 'authorTobiUid', 'createdAt'])
+        && request.resource.data.authorAuthUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && !exists(homeworkOwnerPath(hwKey, entryId))
+        && existsAfter(homeworkPath(hwKey, entryId))
+        && getAfter(homeworkPath(hwKey, entryId)).data.reportCount == 0
+        && (
+          (request.resource.data.authorTobiUid == null
+            && !existsAfter(coinEventPath('reward-' + hwKey + '-' + entryId)))
+          ||
+          (request.resource.data.authorTobiUid == request.auth.uid
+            && isAccountUser()
+            && validPostBatch(request.auth.uid, 'reward-' + hwKey + '-' + entryId))
+        );
+      allow update: if false;
+      allow delete: if exists(homeworkPath(hwKey, entryId))
+        && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2
+        && !existsAfter(homeworkPath(hwKey, entryId))
+        && (
+          (resource.data.authorTobiUid == null
+            && !existsAfter(coinEventPath('penalty-' + hwKey + '-' + entryId)))
+          ||
+          (resource.data.authorTobiUid is string
+            && resource.data.authorTobiUid.size() > 0
+            && validPenaltyBatch(resource.data.authorTobiUid, 'penalty-' + hwKey + '-' + entryId))
+        );
+    }
+
+    match /jdnextCoinEvents/{eventId} {
+      allow read: if false;
+      allow create: if validRewardEvent(eventId) || validPenaltyEvent(eventId);
+      allow update, delete: if false;
+    }
+
     match /tobiAccounts/{usernameKey} {
       allow read, write: if false;
     }
 
-    // Public maintenance status; only existing admins can change it.
     match /siteSettings/jdnext {
       allow read: if true;
       allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // Schema metadata and all other data are not client-accessible.
     match /{document=**} {
       allow read, write: if false;
     }
