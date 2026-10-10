@@ -16,7 +16,8 @@ Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Die Browser-C
 
 - Neue Firebase-Auth-Nutzer erhalten beim ersten erfolgreichen Profil-Lesevorgang ein Firestore-Profil `users/{UID}`, falls es noch fehlt. Die Regeln erlauben dabei nur `tags: []` und `goldCoins: 0`.
 - Das Admin Center listet nur Profile aus `users`. Ein Konto, das nur in Firebase Authentication angelegt und noch nie bei einem TobiServices-Dienst angemeldet wurde, erscheint erst nach dem ersten Login.
-- Bestehende Admins dürfen Tags verwalten, den TobiServices-Dienstzugriff sperren/freigeben und den JDNEXT-Wartungsstatus ändern. Firestore Rules überprüfen die Admin-Rolle bei jedem solchen Schreibzugriff.
+- Bestehende Admins dürfen Tags und Dienstzugriff verwalten, JDNEXT-Wartung aktivieren und den Coinstand von Profilen ändern. Das eigene Admin-Tag ist beim eigenen Profil geschützt.
+- Admins können ihren persönlichen Wartungsbypass in JDNEXT aktivieren; der Schalter wird im eigenen Profil gespeichert und wirkt nur auf die JDNEXT-Wartungsseite.
 - Der Schalter **Dienste sperren** setzt `users/{UID}.disabled = true`. Das deaktiviert nicht das Firebase-Authentication-Konto an sich; jede angebundene Website muss das Feld beachten.
 - Ältere Username/Passwort-Konten und die in `functions/index.js` verbliebenen Callable Functions werden im Spark-Client nicht verwendet.
 
@@ -47,11 +48,11 @@ Die UID des Dokuments muss exakt zur Firebase-Authentication-UID gehören. Beisp
 }
 ```
 
-`users/{uid}.goldCoins` ist das gemeinsame Guthaben über alle TobiServices-Dienste. Es wird als nicht-negative Ganzzahl gespeichert. Die veröffentlichten Regeln erlauben einem Kontoinhaber nur, ein bislang fehlendes Feld einmalig auf `0` zu initialisieren. Reguläre Browser-Clients können einen bestehenden Kontostand nicht verändern. Es gibt noch keine Verdien- oder Ausgabefunktion.
+`users/{uid}.goldCoins` ist das gemeinsame Guthaben über alle TobiServices-Dienste. Es wird als nicht-negative Ganzzahl gespeichert. Die veröffentlichten Regeln erlauben einem Kontoinhaber nur, ein bislang fehlendes Feld einmalig auf `0` zu initialisieren. Nur Admins können einen bestehenden Kontostand im Admin Center ändern; Firestore-Regeln beschränken diese Änderung serverseitig auf nicht-negative Ganzzahlen. Es gibt noch keine Verdien- oder Ausgabefunktion.
 
 ### `siteSettings/jdnext`
 
-Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt, Änderungen dürfen nur von Admins erfolgen.
+Wartungsstatus für JDNEXT. Lesen ist öffentlich erlaubt, Änderungen dürfen nur von Admins erfolgen. Der optionale persönliche Bypass steht im Profilfeld `users/{uid}.maintenanceBypass`; nur der jeweilige Admin darf ihn für sich selbst umschalten.
 
 ### `tobiAccounts/{usernameKey}` (Legacy)
 
