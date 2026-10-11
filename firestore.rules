@@ -623,7 +623,8 @@ service cloud.firestore {
     }
 
     match /siteSettings/accessControl {
-      allow get: if signedIn();
+      // Public read exposes only tag IDs and feature permission lists, not account data.
+      allow get: if true;
       allow list: if false;
       allow create, update: if isAdmin() && validAccessControl(request.resource.data);
       allow delete: if false;
