@@ -156,7 +156,7 @@ export const hasTag = (profile, tag) =>
 
 export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, "admin");
 
-export const ACCESS_RESOURCES = Object.freeze({
+export export const ACCESS_RESOURCES = Object.freeze({
   "test-mode": "Untis Next Test Mode",
   "jdnext": "JDNEXT",
   "untis-next": "Untis Next",
