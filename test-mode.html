@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TobiServices – Test Mode</title>
+<link rel="stylesheet" href="theme.css">
+<style>
+.test-frame{width:100%;height:74vh;min-height:520px;border:1px solid var(--line);border-radius:14px;background:#0a0c2a}
+.test-warn{font-size:12px;line-height:1.55;color:var(--muted)}
+</style>
+</head>
+<body class="jd-page">
+<div class="jd-wrap">
+  <div class="jd-topbar">
+    <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span><div class="jd-logo-main"><span>TEST</span><span class="l2">MODE</span></div></div>
+    <a class="jd-btn-ghost" href="./account.html">Mein Account</a>
+  </div>
+  <section class="jd-card" style="margin-top:16px">
+    <h3>Untis Next – Test-Mirror</h3>
+    <p id="testStatus">Prüfe deine Berechtigungen …</p>
+    <div class="actions" id="testActions" hidden>
+      <a class="jd-btn" href="https://hannonuppi.github.io/JDNEXT_UNTIS/test/" target="_blank" rel="noopener noreferrer">Test-Mirror separat öffnen ↗</a>
+      <button class="jd-btn" id="publishLive" hidden>Getestete Version live veröffentlichen</button>
+      <a class="jd-btn-ghost" href="./admin.html" id="adminLink" hidden>Admin Center ↗</a>
+    </div>
+    <p class="test-warn">Diese Vorschau nutzt dieselben Firebase-Datenbanken wie Untis Next. Verändere hier keine echten Hausaufgaben oder Kontodaten. Die statischen Dateien auf GitHub Pages sind technisch weiterhin öffentlich; diese Seite kontrolliert den regulären Zugang, ist aber kein Schutz vor direktem Dateiabruf.</p>
+  </section>
+  <section class="jd-card" style="margin-top:14px" id="previewCard" hidden>
+    <iframe class="test-frame" title="Untis Next Test-Mirror" src="https://hannonuppi.github.io/JDNEXT_UNTIS/test/" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+  </section>
+</div>
+<script src="theme.js"></script>
+<script type="module">
+import { onUser, isAdmin, hasAccess, getAccessControl, requestLivePublish, requireLogin } from "./auth-core.js";
+const status=document.getElementById("testStatus");
+const actions=document.getElementById("testActions");
+const preview=document.getElementById("previewCard");
+const publish=document.getElementById("publishLive");
+onUser(async (user,profile)=>{
+  if(!user){requireLogin(location.href);return;}
+  if(!profile||profile.disabled===true){status.textContent="Dieses Konto ist nicht verfügbar.";return;}
+  let access=null;
+  try{access=await getAccessControl();}catch(error){console.warn("Access control unavailable",error);}
+  if(!hasAccess(profile,"test-mode",access)){
+    status.textContent="Für den Test Mode ist dein Konto nicht freigeschaltet. Bitte wende dich an einen Admin.";
+    return;
+  }
+  status.textContent="Zugriff bestätigt.";
+  actions.hidden=false;
+  preview.hidden=false;
+  if(isAdmin(profile)){
+    publish.hidden=false;
+    document.getElementById("adminLink").hidden=false;
+  }
+});
+publish.addEventListener("click",async()=>{
+  publish.disabled=true;
+  status.textContent="Live-Veröffentlichung wird beantragt …";
+  try{
+    const result=await requestLivePublish("Freigabe aus dem Test Mode");
+    status.textContent="Freigabe gespeichert ("+result.requestId+"). Der Veröffentlichungs-Workflow prüft spätestens innerhalb von fünf Minuten.";
+  }catch(error){
+    status.textContent=error?.message||"Die Freigabe ist fehlgeschlagen.";
+  }finally{publish.disabled=false;}
+});
+</script>
+</body>
+</html>
