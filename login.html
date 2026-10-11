@@ -26,6 +26,7 @@
 import {
   auth,
   login,
+  createAccount,
   onUser,
   signOut,
   safeReturnUrl,
@@ -40,43 +41,61 @@ function showError(error){
   console.error(error);
   const code=String(error?.code||"");
   if(code==="account-disabled-by-moderation"){
-    return jdToast("Dieses Konto ist wegen seines negativen Münzstands für TobiServices gesperrt. Bitte wende dich an einen Admin.");
+    return jdToast("Dieses Konto ist für TobiServices gesperrt. Bitte wende dich an einen Admin.");
   }
-  if(code.includes("unauthenticated")||code.includes("auth/invalid-credential")||code.includes("auth/invalid-login-credentials")){
+  if(code==="auth/email-already-in-use"){
+    return jdToast("Für diese E-Mail-Adresse existiert bereits ein Konto. Melde dich stattdessen an.");
+  }
+  if(code==="auth/invalid-email"){
+    return jdToast("Bitte gib eine gültige E-Mail-Adresse ein.");
+  }
+  if(code==="auth/weak-password"){
+    return jdToast("Das Passwort muss mindestens 8 Zeichen lang sein.");
+  }
+  if(code==="auth/operation-not-allowed"){
+    return jdToast("Die E-Mail-/Passwort-Anmeldung ist in Firebase noch nicht aktiviert.");
+  }
+  if(code.includes("unauthenticated")||code.includes("auth/invalid-credential")||code.includes("auth/invalid-login-credentials")||code==="auth/wrong-password"||code==="auth/user-not-found"){
     return jdToast("E-Mail-Adresse oder Passwort ist falsch.");
   }
   if(code.includes("auth/too-many-requests")){
-    return jdToast("Zu viele Anmeldeversuche. Bitte warte einen Moment.");
+    return jdToast("Zu viele Versuche. Bitte warte einen Moment.");
   }
   if(code.includes("unavailable") || code.includes("failed-precondition") || code.includes("auth/network-request-failed")){
     return jdToast("Firebase-Accountdienst ist noch nicht bereit oder nicht erreichbar.");
   }
-  jdToast("Anmeldung fehlgeschlagen.");
+  if(code.includes("permission-denied") || code.includes("insufficient permissions")){
+    return jdToast("Das Konto wurde eventuell erstellt, aber das Profil konnte nicht gespeichert werden. Bitte erneut anmelden; falls es weiter auftritt, müssen die Firestore-Regeln geprüft werden.");
+  }
+  jdToast("Anmeldung oder Registrierung fehlgeschlagen.");
 }
 
 function renderLogin(){
   $("#card").innerHTML=`
     <h3>TobiServices Account</h3>
-    <p>Melde dich mit einem bestehenden Firebase-Authentication-Konto und deiner E-Mail-Adresse an.</p>
+    <p>Melde dich mit deiner E-Mail-Adresse und deinem Passwort an. Neue Nutzer können kostenlos ein Konto erstellen.</p>
 
     <form id="loginForm" style="display:grid;gap:10px;margin-top:14px">
       <input class="jd-input" id="username" type="email" maxlength="254"
         placeholder="E-Mail-Adresse" autocomplete="email" required>
       <input class="jd-input" id="password" maxlength="128"
         type="password" placeholder="Passwort" autocomplete="current-password" required>
-      <button class="jd-btn" id="loginBtn">Anmelden</button>
+      <button class="jd-btn" id="loginBtn" type="submit">Anmelden</button>
+      <button class="jd-btn-ghost" id="registerOpen" type="button">✨ Neues Konto erstellen</button>
     </form>
 
     <p style="font-size:11px;color:var(--muted);margin-top:14px">
-      Accounts werden direkt in Firebase Authentication verwaltet. Dein Admin-Status kommt aus dem serverseitig geprüften Tag-Profil.
+      Dein Goldguthaben und gekaufte Untis-Next-Themes werden mit diesem Account dauerhaft gespeichert.
     </p>`;
 
+  $("#registerOpen").onclick=renderRegister;
   $("#loginForm").onsubmit=async event=>{
     event.preventDefault();
     if(busy) return;
 
     busy=true;
     $("#loginBtn").disabled=true;
+    $("#registerOpen").disabled=true;
 
     try{
       await login($("#username").value.trim(), $("#password").value);
@@ -84,6 +103,52 @@ function renderLogin(){
     }catch(error){
       showError(error);
       $("#loginBtn").disabled=false;
+      $("#registerOpen").disabled=false;
+      busy=false;
+    }
+  };
+}
+
+function renderRegister(){
+  $("#card").innerHTML=`
+    <h3>✨ Konto erstellen</h3>
+    <p>Erstelle deinen persönlichen TobiServices-Account. Damit bleiben dein Goldguthaben und gekaufte Themes auch nach einem Gerätewechsel erhalten.</p>
+
+    <form id="registerForm" style="display:grid;gap:10px;margin-top:14px">
+      <input class="jd-input" id="displayName" type="text" maxlength="80"
+        placeholder="Anzeigename" autocomplete="nickname" required>
+      <input class="jd-input" id="registerEmail" type="email" maxlength="254"
+        placeholder="E-Mail-Adresse" autocomplete="email" required>
+      <input class="jd-input" id="registerPassword" type="password" minlength="8" maxlength="128"
+        placeholder="Passwort (mindestens 8 Zeichen)" autocomplete="new-password" required>
+      <input class="jd-input" id="registerPasswordConfirm" type="password" minlength="8" maxlength="128"
+        placeholder="Passwort wiederholen" autocomplete="new-password" required>
+      <button class="jd-btn" id="createAccountBtn" type="submit">Konto erstellen</button>
+      <button class="jd-btn-ghost" id="backToLogin" type="button">Zurück zur Anmeldung</button>
+    </form>
+    <p style="font-size:11px;color:var(--muted);margin-top:14px">
+      Für neue Konten gilt: keine Admin-Rechte und 0 Start-Goldmünzen. Ungewöhnliche oder gesperrte Konten können durch die bestehenden Regeln eingeschränkt sein.
+    </p>`;
+
+  $("#backToLogin").onclick=renderLogin;
+  $("#registerForm").onsubmit=async event=>{
+    event.preventDefault();
+    if(busy) return;
+    const password=$("#registerPassword").value;
+    if(password!==$("#registerPasswordConfirm").value){
+      jdToast("Die beiden Passwörter stimmen nicht überein.");
+      return;
+    }
+    busy=true;
+    $("#createAccountBtn").disabled=true;
+    $("#backToLogin").disabled=true;
+    try{
+      await createAccount($("#registerEmail").value.trim(), password, $("#displayName").value);
+      location.replace(ret||CONFIG.accountUrl);
+    }catch(error){
+      showError(error);
+      $("#createAccountBtn").disabled=false;
+      $("#backToLogin").disabled=false;
       busy=false;
     }
   };
