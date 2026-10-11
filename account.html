@@ -54,7 +54,7 @@ onUser(async (user,profile)=>{
     +"<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-top:18px\">"
     +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
     +(mayUseTestMode?"<button class=\"jd-btn-ghost\" id=\"testMode\">Test Mode</button>":"")
-    +(hasAccess(profile,"account-apk",accessControl)?"<a class=\"jd-btn\" id=\"downloadApk\" href=\"https://github.com/HannoNuppi/JDNEXT_UNTIS/releases/download/android-apk/UntisNext.apk\" download=\"UntisNext.apk\">Neueste Untis-Next-APK herunterladen ↓</a>":"")
+    +(hasAccess(profile,"account-apk",accessControl)?"<a class=\"jd-btn\" id=\"downloadApk\" href=\"https://hannonuppi.github.io/JDNEXT_UNTIS/UntisNext.apk\" download=\"UntisNext.apk\">Neueste Untis-Next-APK herunterladen ↓</a>":"")
     +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
 
   document.getElementById("name").textContent=user.displayName||profile.displayName||user.email||"TobiServices";
