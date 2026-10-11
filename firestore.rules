@@ -15,7 +15,8 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags is list
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags.hasAny(['admin'])
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled != true;
+        && (!('disabled' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled != true);
     }
 
     function userPath(uid) {
@@ -27,7 +28,8 @@ service cloud.firestore {
         && exists(userPath(uid))
         && get(userPath(uid)).data.goldCoins is int
         && get(userPath(uid)).data.goldCoins > -50
-        && get(userPath(uid)).data.disabled != true;
+        && (!('disabled' in get(userPath(uid)).data)
+          || get(userPath(uid)).data.disabled != true);
     }
 
     function mayPostWithoutJdnextReward(uid) {
@@ -35,7 +37,8 @@ service cloud.firestore {
         || (
           exists(userPath(uid))
           && (
-            get(userPath(uid)).data.disabled == true
+            (('disabled' in get(userPath(uid)).data)
+              && get(userPath(uid)).data.disabled == true)
             || get(userPath(uid)).data.goldCoins <= -50
           )
         );
