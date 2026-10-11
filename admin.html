@@ -81,7 +81,7 @@
     <pre id="diagnosticOutput" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border-radius:10px;background:rgba(0,0,0,.22);border:1px solid var(--line);font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;margin-top:12px"></pre>
   </section>
 
-  <section class="jd-card" id="accessCard" style="margin-top:14px">
+  <section class="jd-card" id="accessCard" style="margin-top:14px;display:none">
     <h3>Tag-Liste & Zugriffsverwaltung</h3>
     <p>Neue Tags zuerst hier anlegen. Konten können nur Tags aus dieser Liste erhalten. Mit der Matrix legst du fest, welche Tags die jeweiligen TobiServices-Funktionen verwenden dürfen. Das Admin Center selbst bleibt Admins vorbehalten.</p>
     <div class="toolbar">
@@ -98,7 +98,7 @@
     <p class="access-note">Hinweis: leere Freigabelisten lassen Untis Next und den APK-Download öffentlich. Für JDNEXT und Test Mode muss mindestens ein erlaubter Tag gesetzt sein. Admins behalten immer Zugriff.</p>
   </section>
 
-  <section class="jd-card" id="testPublishCard" style="margin-top:14px">
+  <section class="jd-card" id="testPublishCard" style="margin-top:14px;display:none">
     <h3>Test Mode & Live-Veröffentlichung</h3>
     <p>Neue Website-Dateien werden zunächst als Test-Mirror unter <span class="mono">/test/</span> bereitgestellt. Prüfe dort Layout und Funktionen. Erst über die Freigabe wird die getestete Version zur Live-Version.</p>
     <div class="actions">
@@ -186,7 +186,8 @@ function fillFilter(){
   f.value=[...f.options].some(o=>o.value===old)?old:"";
 }
 function tagSelectOptions(){
-  return (accessControl?.tags||["admin","dance-beta"]).map(tag=>'<option value="'+escapeHtml(tag)+'">'+escapeHtml(tag)+'</option>').join("");
+  return '<option value="">Tag auswählen …</option>' +
+    (accessControl?.tags||["admin","dance-beta"]).map(tag=>'<option value="'+escapeHtml(tag)+'">'+escapeHtml(tag)+'</option>').join("");
 }
 function renderTagManager(){
   if(!accessControl)return;
@@ -521,7 +522,7 @@ onUser(async function(user,profile){
   if(!isAdmin(profile)){$("#status").textContent="Kein Zugriff";return;}
   $("#status").textContent="Admin bestätigt";$("#accountBtn").onclick=function(){location.href=CONFIG.accountUrl;};
   $("#createCard").style.display="block";$("#accountsCard").style.display="block";
-  $("#createCard").style.display="block";$("#accountsCard").style.display="block";$("#accessCard").style.display="block";$("#testPublishCard").style.display="block";
+  $("#accessCard").style.display="block";$("#testPublishCard").style.display="block";
   await loadMaintenanceMode();
   await refreshUsers();
   await loadAccessManager();
