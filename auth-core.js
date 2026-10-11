@@ -156,6 +156,95 @@ export const hasTag = (profile, tag) =>
 
 export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, "admin");
 
+export const ACCESS_RESOURCES = Object.freeze({
+  "test-mode": "Untis Next Test Mode",
+  "jdnext": "JDNEXT",
+  "untis-next": "Untis Next",
+  "account-apk": "APK-Download"
+});
+
+const DEFAULT_ACCESS_CONTROL = Object.freeze({
+  tags: ["admin", "dance-beta"],
+  permissions: {
+    "test-mode": ["admin"],
+    "jdnext": ["admin", "dance-beta"],
+    "untis-next": [],
+    "account-apk": []
+  }
+});
+
+function cleanAccessTags(value) {
+  return [...new Set((Array.isArray(value) ? value : [])
+    .map(tag => String(tag ?? "").toLowerCase().trim())
+    .filter(tag => /^[a-z0-9äöüß_-]{1,24}$/.test(tag)))]
+    .slice(0, 100);
+}
+
+function normalizeAccessControl(data = {}, exists = true) {
+  const tags = cleanAccessTags(data.tags);
+  for (const tag of DEFAULT_ACCESS_CONTROL.tags) if (!tags.includes(tag)) tags.push(tag);
+  const permissions = {};
+  for (const key of Object.keys(ACCESS_RESOURCES)) {
+    const source = data.permissions?.[key];
+    permissions[key] = [...new Set((Array.isArray(source) ? source : DEFAULT_ACCESS_CONTROL.permissions[key])
+      .map(tag => String(tag ?? "").toLowerCase().trim())
+      .filter(tag => tags.includes(tag)))];
+  }
+  return { tags, permissions, exists };
+}
+
+export async function getAccessControl() {
+  const snap = await getDoc(doc(db, "siteSettings", "accessControl"));
+  return normalizeAccessControl(snap.exists() ? snap.data() || {} : DEFAULT_ACCESS_CONTROL, snap.exists());
+}
+
+export function hasAccess(profile, resource, accessControl = null) {
+  if (!profile || profile.disabled === true) return false;
+  if (isAdmin(profile)) return true;
+  if (!Object.prototype.hasOwnProperty.call(ACCESS_RESOURCES, resource)) return false;
+  const config = normalizeAccessControl(accessControl || DEFAULT_ACCESS_CONTROL);
+  const allowedTags = config.permissions[resource] || [];
+  // Blank lists keep ordinary public app/download resources ungated.
+  if (allowedTags.length === 0 && resource !== "test-mode" && resource !== "jdnext") return true;
+  const userTags = Array.isArray(profile.tags) ? profile.tags : [];
+  return allowedTags.some(tag => userTags.includes(tag));
+}
+
+export async function saveAccessControl(accessControl) {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("Bitte melde dich erneut an.");
+  const adminSnap = await getDoc(doc(db, "users", currentUser.uid));
+  const adminProfile = adminSnap.exists() ? adminSnap.data() || {} : {};
+  if (adminProfile.disabled === true || !Array.isArray(adminProfile.tags) || !adminProfile.tags.includes("admin")) {
+    throw new Error("Nur aktive Admins dürfen Tag- und Zugriffsregeln ändern.");
+  }
+
+  const tags = cleanAccessTags(accessControl?.tags);
+  if (!tags.includes("admin")) tags.unshift("admin");
+  if (tags.length > 100) throw new Error("Maximal 100 Tags.");
+  const permissions = {};
+  for (const key of Object.keys(ACCESS_RESOURCES)) {
+    const requested = Array.isArray(accessControl?.permissions?.[key]) ? accessControl.permissions[key] : [];
+    permissions[key] = [...new Set(requested.map(tag => String(tag).toLowerCase().trim()))];
+    if (permissions[key].some(tag => !tags.includes(tag))) {
+      throw new Error("Jede Berechtigung muss auf einen Tag aus der Tag-Liste verweisen.");
+    }
+  }
+
+  const ref = doc(db, "siteSettings", "accessControl");
+  const snap = await getDoc(ref);
+  const payload = {
+    tags,
+    permissions,
+    updatedBy: currentUser.uid,
+    updatedAt: serverTimestamp()
+  };
+  if (snap.exists()) await updateDoc(ref, payload);
+  else await setDoc(ref, payload);
+  return normalizeAccessControl(payload, true);
+}
+
+
 export async function createAccount(email, password, displayName) {
   const normalizedEmail = String(email ?? "").trim();
   const secret = String(password ?? "");
@@ -224,6 +313,14 @@ export async function setTags(uid, tags) {
   const targetUid = String(uid ?? "");
   if (!targetUid) throw new Error("uid-required");
   const cleanTags = normalizeTags(tags);
+  const accessRef = doc(db, "siteSettings", "accessControl");
+  const accessSnap = await getDoc(accessRef);
+  const allowedTags = accessSnap.exists()
+    ? cleanAccessTags((accessSnap.data() || {}).tags)
+    : [...DEFAULT_ACCESS_CONTROL.tags];
+  if (cleanTags.some(tag => !allowedTags.includes(tag))) {
+    throw new Error("Du kannst nur Tags aus der zentralen Tag-Liste zuweisen.");
+  }
   if (targetUid === auth.currentUser?.uid && !cleanTags.includes("admin")) {
     throw new Error("Du kannst deinen eigenen Admin-Tag nicht entfernen.");
   }
