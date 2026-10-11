@@ -249,14 +249,23 @@ service cloud.firestore {
     }
 
 
+    // Prices are enforced by Firestore Rules, not trusted from the browser.
+    function themePrice(themeId) {
+      return themeId == 'RoyalRebels' || themeId == 'Bronze' ? 50
+        : themeId == 'Silver' ? 70
+        : themeId == 'Gold' ? 100
+        : ['Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro'].hasAny([themeId]) ? 10
+        : 0;
+    }
+
     function validThemePurchaseId(themeId) {
-      return themeId is string
-        && ['Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro'].hasAny([themeId]);
+      return themeId is string && themePrice(themeId) > 0;
     }
 
     function validThemeSelection(themeId) {
       return themeId is string
-        && ['Next', 'Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro'].hasAny([themeId]);
+        && ['Next', 'Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro',
+          'RoyalRebels', 'Bronze', 'Silver', 'Gold'].hasAny([themeId]);
     }
 
     // Ein Kauf ist nur gültig, wenn Profilabbuchung und Event atomar zusammenpassen.
@@ -272,14 +281,14 @@ service cloud.firestore {
         && eventId == 'theme-' + uid + '-' + d.themeId
         && !exists(coinEventPath(eventId))
         && d.uid == uid
-        && d.amount == -10
+        && d.amount == -themePrice(d.themeId)
         && d.type == 'theme-purchase'
         && validThemePurchaseId(d.themeId)
         && d.createdAt == request.time
         && exists(userPath(uid))
         && profileBefore.data.goldCoins is int
-        && profileBefore.data.goldCoins >= 10
-        && profileAfter.data.goldCoins == profileBefore.data.goldCoins - 10
+        && profileBefore.data.goldCoins >= themePrice(d.themeId)
+        && profileAfter.data.goldCoins == profileBefore.data.goldCoins - themePrice(d.themeId)
         && profileAfter.data.lastJdnextCoinEventId == eventId
         && profileAfter.data.lastProfileChangeAt == request.time
         && profileAfter.data.ownedThemes is list
@@ -329,6 +338,10 @@ service cloud.firestore {
         && !exists(ownerPath)
         && existsAfter(ownerPath)
         && ownerAfter.data.authorAuthUid == request.auth.uid
+        && (
+          (isAccountUser() && ownerAfter.data.authorTobiAccountUid == request.auth.uid)
+          || (!isAccountUser() && ownerAfter.data.authorTobiAccountUid == null)
+        )
         && (
           (ownerAfter.data.authorTobiUid == null
             && mayPostWithoutJdnextReward(request.auth.uid)
@@ -502,9 +515,13 @@ service cloud.firestore {
         && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2;
       allow list: if false;
       allow create: if signedIn()
-        && request.resource.data.keys().hasAll(['authorAuthUid', 'authorTobiUid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['authorAuthUid', 'authorTobiUid', 'createdAt'])
+        && request.resource.data.keys().hasAll(['authorAuthUid', 'authorTobiUid', 'authorTobiAccountUid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['authorAuthUid', 'authorTobiUid', 'authorTobiAccountUid', 'createdAt'])
         && request.resource.data.authorAuthUid == request.auth.uid
+        && (
+          (isAccountUser() && request.resource.data.authorTobiAccountUid == request.auth.uid)
+          || (!isAccountUser() && request.resource.data.authorTobiAccountUid == null)
+        )
         && request.resource.data.createdAt == request.time
         && !exists(homeworkOwnerPath(hwKey, entryId))
         && existsAfter(homeworkPath(hwKey, entryId))
