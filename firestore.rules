@@ -22,6 +22,44 @@ service cloud.firestore {
     function userPath(uid) {
       return /databases/$(database)/documents/users/$(uid);
     }
+    function validAccessControl(data) {
+      return data.keys().hasAll(['tags', 'permissions', 'updatedAt', 'updatedBy'])
+        && data.keys().hasOnly(['tags', 'permissions', 'updatedAt', 'updatedBy'])
+        && data.tags is list
+        && data.tags.size() >= 1
+        && data.tags.size() <= 100
+        && data.tags.hasAny(['admin'])
+        && data.permissions is map
+        && data.permissions.keys().hasOnly(['test-mode', 'jdnext', 'untis-next', 'account-apk'])
+        && data.permissions['test-mode'] is list
+        && data.permissions['jdnext'] is list
+        && data.permissions['untis-next'] is list
+        && data.permissions['account-apk'] is list
+        && data.permissions['test-mode'].size() <= 100
+        && data.permissions['jdnext'].size() <= 100
+        && data.permissions['untis-next'].size() <= 100
+        && data.permissions['account-apk'].size() <= 100
+        && data.tags.hasAll(data.permissions['test-mode'])
+        && data.tags.hasAll(data.permissions['jdnext'])
+        && data.tags.hasAll(data.permissions['untis-next'])
+        && data.tags.hasAll(data.permissions['account-apk'])
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt == request.time;
+    }
+
+    function validDeploymentRequest(data) {
+      return data.keys().hasAll(['requestId', 'target', 'requestedBy', 'requestedAt', 'note'])
+        && data.keys().hasOnly(['requestId', 'target', 'requestedBy', 'requestedAt', 'note'])
+        && data.requestId is string
+        && data.requestId.size() >= 8
+        && data.requestId.size() <= 100
+        && data.target == 'untis-next'
+        && data.requestedBy == request.auth.uid
+        && data.requestedAt == request.time
+        && data.note is string
+        && data.note.size() <= 300;
+    }
+
 
     function eligibleForJdnextReward(uid) {
       return isAccountUser()
@@ -421,6 +459,15 @@ service cloud.firestore {
           || request.resource.data.maintenanceBypass is bool)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['maintenanceBypass'])
           || uid == request.auth.uid)
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tags'])
+          || (
+            exists(/databases/$(database)/documents/siteSettings/accessControl)
+            && request.resource.data.tags is list
+            && request.resource.data.tags.size() <= 20
+            && get(/databases/$(database)/documents/siteSettings/accessControl).data.tags.hasAll(request.resource.data.tags)
+          )
+        )
       ) || (
         isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -573,6 +620,21 @@ service cloud.firestore {
 
     match /tobiAccounts/{usernameKey} {
       allow read, write: if false;
+    }
+
+    match /siteSettings/accessControl {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if isAdmin() && validAccessControl(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Public read enables the scheduled GitHub Pages publisher to inspect a pending release request.
+    // Only an authenticated active admin can create or change the request.
+    match /siteSettings/deployment {
+      allow get, list: if true;
+      allow create, update: if isAdmin() && validDeploymentRequest(request.resource.data);
+      allow delete: if false;
     }
 
     match /siteSettings/jdnext {
