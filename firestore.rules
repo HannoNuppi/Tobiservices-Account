@@ -265,7 +265,7 @@ service cloud.firestore {
     function validThemeSelection(themeId) {
       return themeId is string
         && ['Next', 'Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro',
-          'RoyalRebels', 'Bronze', 'Silver', 'Gold'].hasAny([themeId]);
+          'RoyalRebels', 'Bronze', 'Silver', 'Gold', 'WinterEvent', 'BirthdayEvent'].hasAny([themeId]);
     }
 
     // Ein Kauf ist nur gültig, wenn Profilabbuchung und Event atomar zusammenpassen.
@@ -421,6 +421,22 @@ service cloud.firestore {
           || request.resource.data.maintenanceBypass is bool)
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['maintenanceBypass'])
           || uid == request.auth.uid)
+      ) || (
+        isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownedThemes', 'equippedTheme', 'lastProfileChangeAt'
+        ])
+        && request.resource.data.ownedThemes is list
+        && request.resource.data.ownedThemes.size() <= 30
+        && request.resource.data.lastProfileChangeAt == request.time
+        && (
+          !('equippedTheme' in request.resource.data)
+          || request.resource.data.equippedTheme == 'Next'
+          || (
+            validThemeSelection(request.resource.data.equippedTheme)
+            && request.resource.data.ownedThemes.hasAny([request.resource.data.equippedTheme])
+          )
+        )
       ) || (
         ownProfile(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goldCoins'])
