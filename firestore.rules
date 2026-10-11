@@ -37,6 +37,34 @@ service cloud.firestore {
       return /databases/$(database)/documents/jdnextCoinEvents/$(eventId);
     }
 
+    function homeworkImagePath(hwKey, entryId, imageId) {
+      return /databases/$(database)/documents/jdnextHomework/$(hwKey)/entries/$(entryId)/images/$(imageId);
+    }
+
+    function imageRefMatches(data, imageId, filename) {
+      return data.images is list
+        && (
+          (data.images.size() > 0 && data.images[0].kind == 'firestore'
+            && data.images[0].imageId == imageId && data.images[0].filename == filename)
+          ||
+          (data.images.size() > 1 && data.images[1].kind == 'firestore'
+            && data.images[1].imageId == imageId && data.images[1].filename == filename)
+          ||
+          (data.images.size() > 2 && data.images[2].kind == 'firestore'
+            && data.images[2].imageId == imageId && data.images[2].filename == filename)
+        );
+    }
+
+    function validFirestoreImagesAfter(hwKey, entryId, images) {
+      return images.size() <= 3
+        && (images.size() < 1 || images[0].kind != 'firestore'
+          || existsAfter(homeworkImagePath(hwKey, entryId, images[0].imageId)))
+        && (images.size() < 2 || images[1].kind != 'firestore'
+          || existsAfter(homeworkImagePath(hwKey, entryId, images[1].imageId)))
+        && (images.size() < 3 || images[2].kind != 'firestore'
+          || existsAfter(homeworkImagePath(hwKey, entryId, images[2].imageId)));
+    }
+
     function validPostBatch(uid, eventId) {
       let eventAfter = getAfter(coinEventPath(eventId));
       let d = eventAfter.data;
@@ -178,16 +206,30 @@ service cloud.firestore {
 
     function validImage(image) {
       return image is map
-        && image.keys().hasAll(['messageId', 'attachmentId', 'filename'])
-        && image.keys().hasOnly(['messageId', 'attachmentId', 'filename'])
-        && image.messageId is string
-        && image.attachmentId is string
-        && image.filename is string
-        && image.messageId.size() >= 15
-        && image.messageId.size() <= 25
-        && image.attachmentId.size() >= 15
-        && image.attachmentId.size() <= 25
-        && image.filename.size() <= 120;
+        && (
+          (
+            image.keys().hasAll(['kind', 'imageId', 'filename'])
+            && image.keys().hasOnly(['kind', 'imageId', 'filename'])
+            && image.kind == 'firestore'
+            && image.imageId is string
+            && image.imageId.matches('img[0-2]')
+            && image.filename is string
+            && image.filename.size() <= 120
+          )
+          ||
+          (
+            image.keys().hasAll(['messageId', 'attachmentId', 'filename'])
+            && image.keys().hasOnly(['messageId', 'attachmentId', 'filename'])
+            && image.messageId is string
+            && image.attachmentId is string
+            && image.filename is string
+            && image.messageId.size() >= 15
+            && image.messageId.size() <= 25
+            && image.attachmentId.size() >= 15
+            && image.attachmentId.size() <= 25
+            && image.filename.size() <= 120
+          )
+        );
     }
 
     function validImages(images) {
@@ -213,6 +255,7 @@ service cloud.firestore {
         && d.author is string
         && d.author.size() <= 80
         && validImages(d.images)
+        && validFirestoreImagesAfter(hwKey, entryId, d.images)
         && d.reportCount == 0
         && d.createdAt == request.time
         && !exists(homeworkPath(hwKey, entryId))
@@ -321,6 +364,30 @@ service cloud.firestore {
       allow create: if validNewHomeworkEntry(hwKey, entryId);
       allow update: if canIncrementReportCount(hwKey, entryId);
       allow delete: if canRemoveHomework(hwKey, entryId);
+
+      match /images/{imageId} {
+        allow read: if exists(homeworkPath(hwKey, entryId))
+          && imageRefMatches(get(homeworkPath(hwKey, entryId)).data, imageId, resource.data.filename);
+        allow create: if signedIn()
+          && imageId.matches('img[0-2]')
+          && request.resource.data.keys().hasAll(['filename', 'dataUrl', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['filename', 'dataUrl', 'createdAt'])
+          && request.resource.data.filename is string
+          && request.resource.data.filename.size() <= 120
+          && request.resource.data.dataUrl is string
+          && request.resource.data.dataUrl.size() <= 800000
+          && request.resource.data.dataUrl.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+')
+          && request.resource.data.createdAt == request.time
+          && !exists(homeworkImagePath(hwKey, entryId, imageId))
+          && existsAfter(homeworkPath(hwKey, entryId))
+          && imageRefMatches(getAfter(homeworkPath(hwKey, entryId)).data, imageId, request.resource.data.filename);
+        allow update: if false;
+        allow delete: if signedIn()
+          && exists(homeworkPath(hwKey, entryId))
+          && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2
+          && !existsAfter(homeworkPath(hwKey, entryId))
+          && imageRefMatches(get(homeworkPath(hwKey, entryId)).data, imageId, resource.data.filename);
+      }
 
       match /reports/{reportUid} {
         allow read: if false;
