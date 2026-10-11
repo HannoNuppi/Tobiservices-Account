@@ -227,249 +227,15 @@ service cloud.firestore {
         && validPenaltyBatch(d.uid, eventId);
     }
 
+    // Neue Einträge nutzen ausschließlich geprüfte Firestore-Bilddokumente.
+    // Alte Discord-Bildverweise bleiben in bereits vorhandenen Einträgen lesbar.
     function validImage(image) {
       return image is map
         && image.keys().hasAll(['kind', 'imageId', 'filename'])
         && image.keys().hasOnly(['kind', 'imageId', 'filename'])
         && image.kind == 'firestore'
         && image.imageId is string
-        && image.imageId.matches('^img[0-2]
-
-    function validImages(images) {
-      return images is list
-        && images.size() <= 3
-        && (images.size() < 1 || validImage(images[0]))
-        && (images.size() < 2 || validImage(images[1]))
-        && (images.size() < 3 || validImage(images[2]));
-    }
-
-    function validNewHomeworkEntry(hwKey, entryId) {
-      let d = request.resource.data;
-      let ownerPath = homeworkOwnerPath(hwKey, entryId);
-      let ownerAfter = getAfter(ownerPath);
-      let rewardEventId = 'reward-' + hwKey + '-' + entryId;
-
-      return signedIn()
-        && d.keys().hasAll(['text', 'author', 'images', 'reportCount', 'createdAt'])
-        && d.keys().hasOnly(['text', 'author', 'images', 'reportCount', 'createdAt'])
-        && d.text is string
-        && d.text.size() >= 3
-        && d.text.size() <= 1000
-        && d.author is string
-        && d.author.size() <= 80
-        && validImages(d.images)
-        && validFirestoreImagesAfter(hwKey, entryId, d.images)
-        && d.reportCount == 0
-        && d.createdAt == request.time
-        && !exists(homeworkPath(hwKey, entryId))
-        && !exists(ownerPath)
-        && existsAfter(ownerPath)
-        && ownerAfter.data.authorAuthUid == request.auth.uid
-        && (
-          (ownerAfter.data.authorTobiUid == null
-            && mayPostWithoutJdnextReward(request.auth.uid)
-            && !existsAfter(coinEventPath(rewardEventId)))
-          ||
-          (ownerAfter.data.authorTobiUid == request.auth.uid
-            && eligibleForJdnextReward(request.auth.uid)
-            && validPostBatch(request.auth.uid, rewardEventId))
-        );
-    }
-
-    function canIncrementReportCount(hwKey, entryId) {
-      let reporterPath = reportPath(hwKey, entryId, request.auth.uid);
-      return signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount'])
-        && resource.data.reportCount is int
-        && request.resource.data.reportCount == resource.data.reportCount + 1
-        && !exists(reporterPath)
-        && existsAfter(reporterPath)
-        && getAfter(reporterPath).data.createdAt == request.time;
-    }
-
-    function canRemoveHomework(hwKey, entryId) {
-      let ownerPath = homeworkOwnerPath(hwKey, entryId);
-      let owner = get(ownerPath);
-      let penaltyEventId = 'penalty-' + hwKey + '-' + entryId;
-      return signedIn()
-        && resource.data.reportCount is int
-        && resource.data.reportCount >= 2
-        && exists(ownerPath)
-        && (
-          (owner.data.authorTobiUid == null
-            && !existsAfter(coinEventPath(penaltyEventId)))
-          ||
-          (owner.data.authorTobiUid is string
-            && owner.data.authorTobiUid.size() > 0
-            && existsAfter(coinEventPath(penaltyEventId))
-            && validPenaltyBatch(owner.data.authorTobiUid, penaltyEventId))
-        );
-    }
-
-    match /users/{uid} {
-      allow get: if ownProfile(uid) || isAdmin();
-      allow list: if isAdmin();
-
-      allow create: if ownProfile(uid)
-        && request.resource.data.keys().hasOnly([
-          'email', 'displayName', 'tags', 'goldCoins',
-          'authProvider', 'createdAt', 'lastProfileChangeAt'
-        ])
-        && request.resource.data.email is string
-        && request.resource.data.displayName is string
-        && request.resource.data.tags == []
-        && request.resource.data.goldCoins == 0
-        && request.resource.data.authProvider == 'firebase-auth';
-
-      allow update: if (
-        isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'tags', 'disabled', 'lastProfileChangeAt', 'email',
-          'displayName', 'username', 'authProvider', 'goldCoins',
-          'maintenanceBypass'
-        ])
-        && (uid != request.auth.uid
-          || (request.resource.data.tags is list
-            && request.resource.data.tags.hasAny(['admin'])
-            && (!('disabled' in request.resource.data)
-              || request.resource.data.disabled != true)))
-        && (!('goldCoins' in request.resource.data)
-          || (request.resource.data.goldCoins is int
-            && request.resource.data.goldCoins >= -9007199254740991
-            && request.resource.data.goldCoins <= 9007199254740991))
-        && (!('goldCoins' in request.resource.data)
-          || request.resource.data.goldCoins > -50
-          || request.resource.data.disabled == true)
-        && (!('maintenanceBypass' in request.resource.data)
-          || request.resource.data.maintenanceBypass is bool)
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['maintenanceBypass'])
-          || uid == request.auth.uid)
-      ) || (
-        ownProfile(uid)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goldCoins'])
-        && !('goldCoins' in resource.data)
-        && request.resource.data.goldCoins == 0
-      ) || (
-        ownProfile(uid)
-        && isAccountUser()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'goldCoins', 'lastProfileChangeAt', 'lastJdnextCoinEventId'
-        ])
-        && isValidOwnJdnextReward(uid)
-      ) || (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'goldCoins', 'disabled', 'lastProfileChangeAt', 'lastJdnextCoinEventId'
-        ])
-        && isValidJdnextPenalty(uid)
-      );
-
-      allow delete: if false;
-    }
-
-    match /jdnextHomework/{hwKey}/entries/{entryId} {
-      allow read: if true;
-      allow create: if validNewHomeworkEntry(hwKey, entryId);
-      allow update: if canIncrementReportCount(hwKey, entryId);
-      allow delete: if canRemoveHomework(hwKey, entryId);
-
-      match /images/{imageId} {
-        allow read: if exists(homeworkPath(hwKey, entryId))
-          && imageRefMatches(get(homeworkPath(hwKey, entryId)).data, imageId, resource.data.filename);
-        allow create: if signedIn()
-          && imageId.matches('^img[0-2]$')
-          && request.resource.data.keys().hasAll(['filename', 'dataUrl', 'createdAt'])
-          && request.resource.data.keys().hasOnly(['filename', 'dataUrl', 'createdAt'])
-          && request.resource.data.filename is string
-          && request.resource.data.filename.size() <= 120
-          && request.resource.data.dataUrl is string
-          && request.resource.data.dataUrl.size() <= 800000
-          && request.resource.data.dataUrl.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+')
-          && request.resource.data.createdAt == request.time
-          && !exists(homeworkImagePath(hwKey, entryId, imageId))
-          && existsAfter(homeworkPath(hwKey, entryId))
-          && imageRefMatches(getAfter(homeworkPath(hwKey, entryId)).data, imageId, request.resource.data.filename);
-        allow update: if false;
-        allow delete: if signedIn()
-          && exists(homeworkPath(hwKey, entryId))
-          && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2
-          && !existsAfter(homeworkPath(hwKey, entryId))
-          && imageRefMatches(get(homeworkPath(hwKey, entryId)).data, imageId, resource.data.filename);
-      }
-
-      match /reports/{reportUid} {
-        allow read: if false;
-        allow create: if signedIn()
-          && reportUid == request.auth.uid
-          && exists(homeworkPath(hwKey, entryId))
-          && exists(homeworkOwnerPath(hwKey, entryId))
-          && get(homeworkOwnerPath(hwKey, entryId)).data.authorAuthUid != request.auth.uid
-          && !exists(reportPath(hwKey, entryId, reportUid))
-          && request.resource.data.keys().hasOnly(['createdAt'])
-          && request.resource.data.createdAt == request.time
-          && getAfter(homeworkPath(hwKey, entryId)).data.reportCount
-            == get(homeworkPath(hwKey, entryId)).data.reportCount + 1;
-        allow update, delete: if false;
-      }
-    }
-
-    match /jdnextHomeworkPrivate/{hwKey}/entries/{entryId} {
-      allow get: if signedIn()
-        && exists(homeworkPath(hwKey, entryId))
-        && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2;
-      allow list: if false;
-      allow create: if signedIn()
-        && request.resource.data.keys().hasAll(['authorAuthUid', 'authorTobiUid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['authorAuthUid', 'authorTobiUid', 'createdAt'])
-        && request.resource.data.authorAuthUid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && !exists(homeworkOwnerPath(hwKey, entryId))
-        && existsAfter(homeworkPath(hwKey, entryId))
-        && getAfter(homeworkPath(hwKey, entryId)).data.reportCount == 0
-        && (
-          (request.resource.data.authorTobiUid == null
-            && mayPostWithoutJdnextReward(request.auth.uid)
-            && !existsAfter(coinEventPath('reward-' + hwKey + '-' + entryId)))
-          ||
-          (request.resource.data.authorTobiUid == request.auth.uid
-            && eligibleForJdnextReward(request.auth.uid)
-            && validPostBatch(request.auth.uid, 'reward-' + hwKey + '-' + entryId))
-        );
-      allow update: if false;
-      allow delete: if exists(homeworkPath(hwKey, entryId))
-        && get(homeworkPath(hwKey, entryId)).data.reportCount >= 2
-        && !existsAfter(homeworkPath(hwKey, entryId))
-        && (
-          (resource.data.authorTobiUid == null
-            && !existsAfter(coinEventPath('penalty-' + hwKey + '-' + entryId)))
-          ||
-          (resource.data.authorTobiUid is string
-            && resource.data.authorTobiUid.size() > 0
-            && validPenaltyBatch(resource.data.authorTobiUid, 'penalty-' + hwKey + '-' + entryId))
-        );
-    }
-
-    match /jdnextCoinEvents/{eventId} {
-      allow read: if false;
-      allow create: if validRewardEvent(eventId) || validPenaltyEvent(eventId);
-      allow update, delete: if false;
-    }
-
-    match /tobiAccounts/{usernameKey} {
-      allow read, write: if false;
-    }
-
-    match /siteSettings/jdnext {
-      allow read: if true;
-      allow create, update: if isAdmin();
-      allow delete: if false;
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-)
+        && image.imageId.matches('^img[0-2]$')
         && image.filename is string
         && image.filename.size() <= 120;
     }
@@ -482,6 +248,65 @@ service cloud.firestore {
         && (images.size() < 3 || validImage(images[2]));
     }
 
+
+    function validThemePurchaseId(themeId) {
+      return themeId is string
+        && ['Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro'].hasAny([themeId]);
+    }
+
+    function validThemeSelection(themeId) {
+      return themeId is string
+        && ['Next', 'Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro'].hasAny([themeId]);
+    }
+
+    // Ein Kauf ist nur gültig, wenn Profilabbuchung und Event atomar zusammenpassen.
+    function validThemePurchaseBatch(uid, eventId) {
+      let eventAfter = getAfter(coinEventPath(eventId));
+      let d = eventAfter.data;
+      let profileBefore = get(userPath(uid));
+      let profileAfter = getAfter(userPath(uid));
+
+      return signedIn()
+        && isAccountUser()
+        && request.auth.uid == uid
+        && eventId == 'theme-' + uid + '-' + d.themeId
+        && !exists(coinEventPath(eventId))
+        && d.uid == uid
+        && d.amount == -10
+        && d.type == 'theme-purchase'
+        && validThemePurchaseId(d.themeId)
+        && d.createdAt == request.time
+        && exists(userPath(uid))
+        && profileBefore.data.goldCoins is int
+        && profileBefore.data.goldCoins >= 10
+        && profileAfter.data.goldCoins == profileBefore.data.goldCoins - 10
+        && profileAfter.data.lastJdnextCoinEventId == eventId
+        && profileAfter.data.lastProfileChangeAt == request.time
+        && profileAfter.data.ownedThemes is list
+        && (
+          (!('ownedThemes' in profileBefore.data)
+            && profileAfter.data.ownedThemes.size() == 1
+            && profileAfter.data.ownedThemes.hasAny([d.themeId]))
+          ||
+          (('ownedThemes' in profileBefore.data)
+            && profileBefore.data.ownedThemes is list
+            && !profileBefore.data.ownedThemes.hasAny([d.themeId])
+            && profileAfter.data.ownedThemes.size() == profileBefore.data.ownedThemes.size() + 1
+            && profileAfter.data.ownedThemes.hasAll(profileBefore.data.ownedThemes)
+            && profileAfter.data.ownedThemes.hasAny([d.themeId]))
+        );
+    }
+
+    function validThemePurchaseEvent(eventId) {
+      let d = request.resource.data;
+      return d.keys().hasAll(['uid', 'amount', 'type', 'themeId', 'createdAt'])
+        && d.keys().hasOnly(['uid', 'amount', 'type', 'themeId', 'createdAt'])
+        && d.uid is string
+        && d.themeId is string
+        && eventId == 'theme-' + d.uid + '-' + d.themeId
+        && validThemePurchaseBatch(d.uid, eventId);
+    }
+
     function validNewHomeworkEntry(hwKey, entryId) {
       let d = request.resource.data;
       let ownerPath = homeworkOwnerPath(hwKey, entryId);
@@ -596,6 +421,26 @@ service cloud.firestore {
         ])
         && isValidOwnJdnextReward(uid)
       ) || (
+        ownProfile(uid)
+        && isAccountUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'goldCoins', 'ownedThemes', 'lastProfileChangeAt', 'lastJdnextCoinEventId'
+        ])
+        && validThemePurchaseBatch(uid, request.resource.data.lastJdnextCoinEventId)
+      ) || (
+        ownProfile(uid)
+        && isAccountUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['equippedTheme'])
+        && validThemeSelection(request.resource.data.equippedTheme)
+        && (
+          request.resource.data.equippedTheme == 'Next'
+          || (
+            ('ownedThemes' in resource.data)
+            && resource.data.ownedThemes is list
+            && resource.data.ownedThemes.hasAny([request.resource.data.equippedTheme])
+          )
+        )
+      ) || (
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'goldCoins', 'disabled', 'lastProfileChangeAt', 'lastJdnextCoinEventId'
         ])
@@ -689,7 +534,7 @@ service cloud.firestore {
 
     match /jdnextCoinEvents/{eventId} {
       allow read: if false;
-      allow create: if validRewardEvent(eventId) || validPenaltyEvent(eventId);
+      allow create: if validRewardEvent(eventId) || validPenaltyEvent(eventId) || validThemePurchaseEvent(eventId);
       allow update, delete: if false;
     }
 
