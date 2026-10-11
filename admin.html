@@ -27,6 +27,17 @@
 .coin-actions .coinInput{max-width:190px}
 .event-theme-actions .eventThemeSelect{flex:1 1 190px;min-width:0}
 .event-theme-status{color:var(--muted);font-size:12px;margin:8px 0 0;overflow-wrap:anywhere}
+.tag-catalog{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tag-admin-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.06);font-size:12px}
+.tag-admin-chip button{border:0;background:none;color:var(--text);cursor:pointer;font:inherit}
+.permission-list{display:grid;gap:10px;margin-top:12px}
+.permission-row{padding:12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.025)}
+.permission-row strong{display:block;margin-bottom:8px}
+.permission-tags{display:flex;gap:8px;flex-wrap:wrap}
+.permission-tag{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 8px;font-size:11px}
+.permission-tag input{width:15px;height:15px;accent-color:#33f0e0}
+.access-note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+.publish-status{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 </style>
 </head>
 <body class="jd-page">
@@ -61,13 +72,41 @@
     </div>
     <div class="bulk" id="bulkBar">
       <span id="selectedCount">0 ausgewählt</span>
-      <input class="jd-input" id="bulkTag" maxlength="24" placeholder="Tag">
+      <select class="jd-input" id="bulkTag" aria-label="Tag"></select>
       <button class="jd-btn-ghost" id="bulkAdd">Tag hinzufügen</button>
       <button class="jd-btn-ghost" id="bulkRemove">Tag entfernen</button>
       <button class="jd-btn-ghost" id="clearSelection">Auswahl löschen</button>
     </div>
     <div id="userList" class="user-list"></div>
     <pre id="diagnosticOutput" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border-radius:10px;background:rgba(0,0,0,.22);border:1px solid var(--line);font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;margin-top:12px"></pre>
+  </section>
+
+  <section class="jd-card" id="accessCard" style="margin-top:14px">
+    <h3>Tag-Liste & Zugriffsverwaltung</h3>
+    <p>Neue Tags zuerst hier anlegen. Konten können nur Tags aus dieser Liste erhalten. Mit der Matrix legst du fest, welche Tags die jeweiligen TobiServices-Funktionen verwenden dürfen. Das Admin Center selbst bleibt Admins vorbehalten.</p>
+    <div class="toolbar">
+      <input class="jd-input" id="newTagName" maxlength="24" placeholder="Neuer Tag, z. B. tester">
+      <button class="jd-btn-ghost" id="createTag">Tag anlegen</button>
+    </div>
+    <div id="tagCatalogList" class="tag-catalog"></div>
+    <h4 style="margin:18px 0 4px">Berechtigungen</h4>
+    <div id="permissionList" class="permission-list"></div>
+    <div class="actions">
+      <button class="jd-btn" id="savePermissions">Berechtigungen speichern</button>
+      <span class="jd-pill" id="accessStatus">Lade zentrale Regeln …</span>
+    </div>
+    <p class="access-note">Hinweis: leere Freigabelisten lassen Untis Next und den APK-Download öffentlich. Für JDNEXT und Test Mode muss mindestens ein erlaubter Tag gesetzt sein. Admins behalten immer Zugriff.</p>
+  </section>
+
+  <section class="jd-card" id="testPublishCard" style="margin-top:14px">
+    <h3>Test Mode & Live-Veröffentlichung</h3>
+    <p>Neue Website-Dateien werden zunächst als Test-Mirror unter <span class="mono">/test/</span> bereitgestellt. Prüfe dort Layout und Funktionen. Erst über die Freigabe wird die getestete Version zur Live-Version.</p>
+    <div class="actions">
+      <a class="jd-btn-ghost" href="test-mode.html" target="_blank" rel="noopener noreferrer">Test Mode öffnen ↗</a>
+      <a class="jd-btn-ghost" href="https://hannonuppi.github.io/JDNEXT_UNTIS/test/" target="_blank" rel="noopener noreferrer">Untis Next Test-Mirror ↗</a>
+      <button class="jd-btn" id="publishLive">Test-Version live veröffentlichen</button>
+    </div>
+    <p id="publishStatus" class="publish-status">Die Freigabe prüft die neueste Test-Version und wird vom Veröffentlichungs-Workflow abgeholt.</p>
   </section>
 
   <section class="jd-card" style="margin-top:14px">
@@ -101,7 +140,7 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setOwnedEventTheme,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
+import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setOwnedEventTheme,getAccessControl,saveAccessControl,ACCESS_RESOURCES,requestLivePublish,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore,collection,getDocs,doc,getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -161,7 +200,7 @@ function renderUsers(){
       "<h3 class=\"username\"></h3><p class=\"uname\"></p><div class=\"mono uid\"></div></div></div>"+
       "<div class=\"chips\"></div><div class=\"actions coin-actions\"><label>Goldmünzen <input class=\"jd-input coinInput\" type=\"number\" min=\"-9007199254740991\" max=\"9007199254740991\" step=\"1\" inputmode=\"numeric\"></label><button class=\"jd-btn-ghost\" data-save-coins>Saldo speichern</button></div>"+
       "<div class=\"actions event-theme-actions\"><select class=\"jd-input eventThemeSelect\" aria-label=\"Event-Theme auswählen\"><option value=\"WinterEvent\">Winterwunder</option><option value=\"BirthdayEvent\">Birthday Bash</option></select><button class=\"jd-btn-ghost\" data-grant-event-theme>Theme vergeben</button><button class=\"jd-btn-ghost\" data-revoke-event-theme>Theme entziehen</button></div><p class=\"event-theme-status\"></p><div class=\"actions\">"+
-      "<input class=\"jd-input tagInput\" maxlength=\"24\" placeholder=\"Tag hinzufügen\">"+
+      "<select class=\"jd-input tagInput\" aria-label=\"Tag auswählen\"></select>"+
       "<button class=\"jd-btn-ghost\" data-add>Hinzufügen</button>"+
       "<button class=\"jd-btn-ghost\" data-copy>UID kopieren</button>"+
       "<button class=\"jd-btn-ghost\" data-toggle>"+(u.disabled?"Dienste freigeben":"Dienste sperren")+"</button>"+
