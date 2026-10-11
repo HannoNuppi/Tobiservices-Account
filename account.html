@@ -21,10 +21,10 @@
 </div>
 <script src="theme.js"></script>
 <script type="module">
-import { onUser, signOut, isAdmin, hasAccess, getAccessControl, CONFIG } from "./auth-core.js";
+import { onUser, signOut, isAdmin, CONFIG } from "./auth-core.js?rev=account-rollback-1";
 const app=document.getElementById("app");
 
-onUser(async (user,profile)=>{
+onUser((user,profile)=>{
   if(!user){
     location.replace("./login.html?return="+encodeURIComponent(location.href));
     return;
@@ -38,10 +38,6 @@ onUser(async (user,profile)=>{
 
   const tags=Array.isArray(profile.tags)?profile.tags:[];
   const accountEmail=profile.email||user.email||"";
-  let accessControl=null;
-  try { accessControl=await getAccessControl(); }
-  catch(error) { console.warn("Zentrale Berechtigungen konnten nicht gelesen werden:",error); }
-  const mayUseTestMode=hasAccess(profile,"test-mode",accessControl);
   app.innerHTML=
     "<div class=\"jd-card\">"
     +"<h3 id=\"name\"></h3>"
@@ -53,8 +49,6 @@ onUser(async (user,profile)=>{
     +"<div style=\"margin-top:12px;font-size:11px;color:var(--muted)\">Account-ID<div id=\"uid\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
     +"<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-top:18px\">"
     +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
-    +(mayUseTestMode?"<button class=\"jd-btn-ghost\" id=\"testMode\">Test Mode</button>":"")
-    +(hasAccess(profile,"account-apk",accessControl)?"<a class=\"jd-btn\" id=\"downloadApk\" href=\"https://hannonuppi.github.io/JDNEXT_UNTIS/UntisNext.apk\" download=\"UntisNext.apk\">Neueste Untis-Next-APK herunterladen ↓</a>":"")
     +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
 
   document.getElementById("name").textContent=user.displayName||profile.displayName||user.email||"TobiServices";
@@ -72,7 +66,6 @@ onUser(async (user,profile)=>{
 
   document.getElementById("logout").onclick=async()=>{ await signOut(); location.href=CONFIG.loginUrl; };
   document.getElementById("admin")?.addEventListener("click",()=>{ location.href="./admin.html"; });
-  document.getElementById("testMode")?.addEventListener("click",()=>{ location.href="./test-mode.html"; });
 });
 </script>
 </body>
