@@ -235,7 +235,7 @@ service cloud.firestore {
             && image.keys().hasOnly(['kind', 'imageId', 'filename'])
             && image.kind == 'firestore'
             && image.imageId is string
-            && image.imageId.matches('img[0-2]')
+            && image.imageId.matches('^img[0-2]$')
             && image.filename is string
             && image.filename.size() <= 120
           )
@@ -396,7 +396,7 @@ service cloud.firestore {
         allow read: if exists(homeworkPath(hwKey, entryId))
           && imageRefMatches(get(homeworkPath(hwKey, entryId)).data, imageId, resource.data.filename);
         allow create: if signedIn()
-          && imageId.matches('img[0-2]')
+          && imageId.matches('^img[0-2]$')
           && request.resource.data.keys().hasAll(['filename', 'dataUrl', 'createdAt'])
           && request.resource.data.keys().hasOnly(['filename', 'dataUrl', 'createdAt'])
           && request.resource.data.filename is string
