@@ -182,7 +182,11 @@ function cleanAccessTags(value) {
 
 function normalizeAccessControl(data = {}, exists = true) {
   const tags = cleanAccessTags(data.tags);
-  for (const tag of DEFAULT_ACCESS_CONTROL.tags) if (!tags.includes(tag)) tags.push(tag);
+  if (!exists) {
+    for (const tag of DEFAULT_ACCESS_CONTROL.tags) if (!tags.includes(tag)) tags.push(tag);
+  } else if (!tags.includes("admin")) {
+    tags.unshift("admin");
+  }
   const permissions = {};
   for (const key of Object.keys(ACCESS_RESOURCES)) {
     const source = data.permissions?.[key];
