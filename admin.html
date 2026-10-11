@@ -148,7 +148,7 @@ const $=s=>document.querySelector(s);
 const OLD_CONFIG={apiKey:"AIzaSyBgkWUtFIH63yJUw4zTbNtplKL5HqDDXMg",authDomain:"next-untis-plus.firebaseapp.com",projectId:"next-untis-plus",storageBucket:"next-untis-plus.firebasestorage.app",messagingSenderId:"276114359651",appId:"1:276114359651:web:c357fa4cc4f395bf55bf56"};
 const untisDb=getFirestore(initializeApp(OLD_CONFIG,"TobiAdminUntis"));
 const JDNEXT_URL="https://hannonuppi.github.io/JDNEXT_UNTIS/";
-let users=[];let selected=new Set();
+let users=[];let selected=new Set();let accessControl=null;
 const EVENT_THEME_OPTIONS=[
   {id:"WinterEvent",name:"Winterwunder"},
   {id:"BirthdayEvent",name:"Birthday Bash"}
@@ -180,10 +180,49 @@ function renderStats(){
 function fillFilter(){
   const f=$("#tagFilter"),old=f.value;
   f.innerHTML="<option value=\"\">Alle Tags</option>";
-  [...new Set(users.flatMap(u=>Array.isArray(u.tags)?u.tags:[]))].sort().forEach(function(tag){
+  [...new Set([...(accessControl?.tags||[]),...users.flatMap(u=>Array.isArray(u.tags)?u.tags:[])])].sort().forEach(function(tag){
     const o=document.createElement("option");o.value=tag;o.textContent=tag;f.appendChild(o);
   });
   f.value=[...f.options].some(o=>o.value===old)?old:"";
+}
+function tagSelectOptions(){
+  return (accessControl?.tags||["admin","dance-beta"]).map(tag=>'<option value="'+escapeHtml(tag)+'">'+escapeHtml(tag)+'</option>').join("");
+}
+function renderTagManager(){
+  if(!accessControl)return;
+  $("#tagCatalogList").innerHTML=accessControl.tags.map(tag=>
+    '<span class="tag-admin-chip"><span>'+escapeHtml(tag)+'</span>'+
+    (tag==="admin"?' <span title="Pflicht-Tag">🔒</span>':' <button type="button" data-remove-tag="'+escapeHtml(tag)+'" aria-label="Tag '+escapeHtml(tag)+' entfernen">×</button>')+
+    '</span>'
+  ).join("");
+  $("#permissionList").innerHTML=Object.entries(ACCESS_RESOURCES).map(([resource,label])=>
+    '<div class="permission-row"><strong>'+escapeHtml(label)+' <span class="mono">('+escapeHtml(resource)+')</span></strong><div class="permission-tags">'+
+    accessControl.tags.map(tag=>'<label class="permission-tag"><input type="checkbox" data-permission-resource="'+escapeHtml(resource)+'" data-permission-tag="'+escapeHtml(tag)+'" '+((accessControl.permissions[resource]||[]).includes(tag)?'checked':'')+'><span>'+escapeHtml(tag)+'</span></label>').join("")+
+    '</div></div>'
+  ).join("");
+  $("#accessStatus").textContent="Tag-Liste geladen · "+accessControl.tags.length+" Tags";
+}
+async function loadAccessManager(){
+  try{
+    accessControl=await getAccessControl();
+    const merged=[...new Set([...accessControl.tags,...users.flatMap(u=>Array.isArray(u.tags)?u.tags:[]),"admin","dance-beta"])]
+      .filter(tag=>/^[a-z0-9äöüß_-]{1,24}$/.test(tag)).slice(0,100);
+    if(!accessControl.exists||merged.some(tag=>!accessControl.tags.includes(tag))){
+      accessControl=await saveAccessControl({tags:merged,permissions:accessControl.permissions});
+    }
+    renderTagManager();
+    renderUsers();
+  }catch(error){
+    console.error("Zentrale Tag-Liste konnte nicht geladen werden:",error);
+    $("#accessStatus").textContent="Zugriffsregeln nicht verfügbar";
+    jdToast("Tag-Verwaltung fehlgeschlagen: "+backendErrorMessage(error),6000);
+  }
+}
+async function persistTagManager(){
+  if(!accessControl)throw new Error("Die zentrale Tag-Liste wurde noch nicht geladen.");
+  accessControl=await saveAccessControl(accessControl);
+  renderTagManager();
+  renderUsers();
 }
 function renderUsers(){
   renderStats();fillFilter();
@@ -193,6 +232,10 @@ function renderUsers(){
     const hay=((u.email||"")+" "+(u.username||"")+" "+(u.displayName||"")+" "+u.uid).toLowerCase();
     return (!q||hay.includes(q))&&(!filter||tags.includes(filter));
   });
+  const bulkSelect=$("#bulkTag");
+  const bulkValue=bulkSelect.value;
+  bulkSelect.innerHTML=tagSelectOptions();
+  if([...bulkSelect.options].some(option=>option.value===bulkValue))bulkSelect.value=bulkValue;
   const root=$("#userList");
   root.innerHTML=shown.map(function(u){
     return "<div class=\"jd-card\" data-uid=\""+escapeHtml(u.uid)+"\">"+
@@ -214,6 +257,7 @@ function renderUsers(){
     card.querySelector(".uname").textContent=u.email||u.username||"(keine E-Mail)";
     card.querySelector(".uid").textContent=u.uid;
     card.querySelector(".coinInput").value=String(Number.isSafeInteger(u.goldCoins)?u.goldCoins:0);
+    card.querySelector(".tagInput").innerHTML=tagSelectOptions();
     const ownedEventNames=EVENT_THEME_OPTIONS.filter(theme=>(Array.isArray(u.ownedThemes)?u.ownedThemes:[]).includes(theme.id)).map(theme=>theme.name);
     card.querySelector(".event-theme-status").textContent=ownedEventNames.length
       ? "Freigeschaltet: "+ownedEventNames.join(", ")
@@ -358,6 +402,66 @@ async function bulk(add){
   }
   selected.clear();$("#bulkTag").value="";renderUsers();jdToast(n+" Accounts geändert.");
 }
+$("#createTag").onclick=async function(){
+  const raw=$("#newTagName").value.toLowerCase().trim();
+  const tag=raw.replace(/[^a-z0-9äöüß_-]+/g,"-").replace(/^-+|-+$/g,"").slice(0,24);
+  if(!tag)return jdToast("Bitte einen gültigen Tag-Namen eingeben.");
+  if(!accessControl)return jdToast("Die zentrale Tag-Liste wird noch geladen.");
+  if(accessControl.tags.includes(tag))return jdToast("Dieser Tag existiert bereits.");
+  if(accessControl.tags.length>=100)return jdToast("Maximal 100 Tags.");
+  try{
+    accessControl.tags.push(tag);
+    accessControl.permissions=Object.fromEntries(Object.entries(accessControl.permissions).map(([key,list])=>[key,[...new Set(list)]]));
+    await persistTagManager();
+    $("#newTagName").value="";
+    jdToast("Tag angelegt: "+tag);
+  }catch(error){jdToast(backendErrorMessage(error),6000);await loadAccessManager();}
+};
+$("#tagCatalogList").addEventListener("click",async function(event){
+  const button=event.target.closest("[data-remove-tag]");if(!button)return;
+  const tag=button.dataset.removeTag;
+  if(tag==="admin")return jdToast("Der Admin-Tag kann nicht entfernt werden.");
+  if(users.some(user=>Array.isArray(user.tags)&&user.tags.includes(tag)))return jdToast("Entferne den Tag zuerst von allen Konten.");
+  if(Object.values(accessControl?.permissions||{}).some(list=>Array.isArray(list)&&list.includes(tag)))return jdToast("Entferne den Tag zuerst aus allen Berechtigungen.");
+  try{
+    accessControl.tags=accessControl.tags.filter(item=>item!==tag);
+    await persistTagManager();
+    jdToast("Tag entfernt: "+tag);
+  }catch(error){jdToast(backendErrorMessage(error),6000);await loadAccessManager();}
+});
+$("#savePermissions").onclick=async function(){
+  if(!accessControl)return jdToast("Die zentrale Tag-Liste wird noch geladen.");
+  const permissions={};
+  Object.keys(ACCESS_RESOURCES).forEach(resource=>{
+    permissions[resource]=[...document.querySelectorAll('[data-permission-resource="'+CSS.escape(resource)+'"]:checked')]
+      .map(input=>input.dataset.permissionTag);
+  });
+  const old=accessControl.permissions;
+  accessControl.permissions=permissions;
+  $("#accessStatus").textContent="Speichere …";
+  try{
+    await persistTagManager();
+    jdToast("Zugriffsrechte gespeichert.");
+  }catch(error){
+    accessControl.permissions=old;
+    $("#accessStatus").textContent=backendErrorMessage(error);
+    jdToast(backendErrorMessage(error),6000);
+    renderTagManager();
+  }
+};
+$("#publishLive").onclick=async function(){
+  const button=this;
+  button.disabled=true;
+  $("#publishStatus").textContent="Veröffentlichungsfreigabe wird gesendet …";
+  try{
+    const result=await requestLivePublish("Vom TobiServices Admin Center freigegeben");
+    $("#publishStatus").textContent="Freigabe gespeichert ("+result.requestId+"). Der Veröffentlichungs-Workflow prüft alle fünf Minuten auf neue Freigaben.";
+    jdToast("Live-Veröffentlichung beantragt. Bitte nach dem Workflow-Deployment kontrollieren.");
+  }catch(error){
+    $("#publishStatus").textContent=backendErrorMessage(error);
+    jdToast(backendErrorMessage(error),6000);
+  }finally{button.disabled=false;}
+};
 $("#exportCsv").onclick=function(){
   const rows=[["UID","E-Mail","Anzeigename","Tags","Deaktiviert"]].concat(users.map(function(u){return [u.uid,u.email||"",u.displayName||"",Array.isArray(u.tags)?u.tags.join("|"):"",u.disabled?"ja":"nein"];}));
   const csv=rows.map(function(row){return row.map(function(v){return "\""+String(v).replace(/"/g,"\"\"")+"\"";}).join(",");}).join("\r\n");
@@ -417,8 +521,11 @@ onUser(async function(user,profile){
   if(!isAdmin(profile)){$("#status").textContent="Kein Zugriff";return;}
   $("#status").textContent="Admin bestätigt";$("#accountBtn").onclick=function(){location.href=CONFIG.accountUrl;};
   $("#createCard").style.display="block";$("#accountsCard").style.display="block";
+  $("#createCard").style.display="block";$("#accountsCard").style.display="block";$("#accessCard").style.display="block";$("#testPublishCard").style.display="block";
   await loadMaintenanceMode();
-  await refreshUsers();await loadHomeworkMonitor();
+  await refreshUsers();
+  await loadAccessManager();
+  await loadHomeworkMonitor();
 });
 </script>
 </body>
