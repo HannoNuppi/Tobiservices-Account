@@ -39,6 +39,9 @@ let busy=false;
 function showError(error){
   console.error(error);
   const code=String(error?.code||"");
+  if(code==="account-disabled-by-moderation"){
+    return jdToast("Dieses Konto ist wegen seines negativen Münzstands für TobiServices gesperrt. Bitte wende dich an einen Admin.");
+  }
   if(code.includes("unauthenticated")||code.includes("auth/invalid-credential")||code.includes("auth/invalid-login-credentials")){
     return jdToast("E-Mail-Adresse oder Passwort ist falsch.");
   }
