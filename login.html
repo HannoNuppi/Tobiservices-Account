@@ -95,6 +95,18 @@ onUser((user,profile)=>{
     return;
   }
 
+  if(profile?.disabled===true){
+    $("#card").innerHTML=`
+      <h3>Account gesperrt</h3>
+      <p>Dieses Konto ist für TobiServices-Dienste gesperrt. Es wurde nicht gelöscht. Bitte wende dich an einen Admin, falls du glaubst, dass dies ein Fehler ist.</p>
+      <button class="jd-btn-ghost" id="logout" style="margin-top:12px">Abmelden</button>`;
+    $("#logout").onclick=async()=>{
+      await signOut();
+      renderLogin();
+    };
+    return;
+  }
+
   if(busy) return;
 
   $("#card").innerHTML=`
