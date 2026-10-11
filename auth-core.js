@@ -221,14 +221,19 @@ export async function setGoldCoins(uid, amount) {
     throw new Error("Nur Admins dürfen Goldmünzen ändern.");
   }
 
+  if (targetUid === current.uid && balance <= -50) {
+    throw new Error("Du kannst deinen eigenen Admin-Account nicht über die Sperrschwelle setzen.");
+  }
   const targetRef = doc(db, "users", targetUid);
   const targetSnap = await getDoc(targetRef);
   if (!targetSnap.exists()) throw new Error("Für diesen Account existiert noch kein TobiServices-Profil.");
 
-  await updateDoc(targetRef, {
+  const update = {
     goldCoins: balance,
     lastProfileChangeAt: serverTimestamp()
-  });
+  };
+  if (balance <= -50) update.disabled = true;
+  await updateDoc(targetRef, update);
   return { ok: true, uid: targetUid, goldCoins: balance };
 }
 
@@ -259,6 +264,10 @@ export async function setDisabled(uid, disabled) {
   const ref = doc(db, "users", targetUid);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error("Für diesen Account existiert noch kein TobiServices-Profil.");
+  const profile = snap.data() || {};
+  if (!disabled && Number.isSafeInteger(profile.goldCoins) && profile.goldCoins <= -50) {
+    throw new Error("Das Guthaben muss zuerst über -50 Goldmünzen angehoben werden.");
+  }
   await updateDoc(ref, {
     disabled: Boolean(disabled),
     lastProfileChangeAt: serverTimestamp()
