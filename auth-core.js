@@ -245,6 +245,43 @@ export async function saveAccessControl(accessControl) {
 }
 
 
+
+export async function requestLivePublish(note = "") {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("Bitte melde dich erneut an.");
+  const adminSnap = await getDoc(doc(db, "users", currentUser.uid));
+  const adminProfile = adminSnap.exists() ? adminSnap.data() || {} : {};
+  if (adminProfile.disabled === true || !Array.isArray(adminProfile.tags) || !adminProfile.tags.includes("admin")) {
+    throw new Error("Nur aktive Admins dürfen eine Live-Veröffentlichung freigeben.");
+  }
+  const requestId = Date.now().toString(36) + "-" + currentUser.uid.slice(0, 10) + "-" + Math.random().toString(36).slice(2, 8);
+  const ref = doc(db, "siteSettings", "deployment");
+  const payload = {
+    requestId,
+    target: "untis-next",
+    requestedBy: currentUser.uid,
+    requestedAt: serverTimestamp(),
+    note: String(note ?? "").trim().slice(0, 300)
+  };
+  const snap = await getDoc(ref);
+  if (snap.exists()) await updateDoc(ref, payload);
+  else await setDoc(ref, payload);
+  return { ok: true, requestId };
+}
+
+export async function getLivePublishRequest() {
+  const snap = await getDoc(doc(db, "siteSettings", "deployment"));
+  if (!snap.exists()) return null;
+  const data = snap.data() || {};
+  return {
+    requestId: typeof data.requestId === "string" ? data.requestId : "",
+    target: typeof data.target === "string" ? data.target : "",
+    requestedBy: typeof data.requestedBy === "string" ? data.requestedBy : "",
+    requestedAt: data.requestedAt || null,
+    note: typeof data.note === "string" ? data.note : ""
+  };
+}
+
 export async function createAccount(email, password, displayName) {
   const normalizedEmail = String(email ?? "").trim();
   const secret = String(password ?? "");
