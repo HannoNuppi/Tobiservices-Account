@@ -202,6 +202,7 @@ export async function listUsers() {
       username: data.username || data.email || "",
       displayName: data.displayName || data.email || "",
       tags: Array.isArray(data.tags) ? data.tags : [],
+      ownedThemes: Array.isArray(data.ownedThemes) ? data.ownedThemes : [],
       goldCoins: Number.isSafeInteger(data.goldCoins) ? data.goldCoins : 0,
       disabled: data.disabled === true,
       maintenanceBypass: data.maintenanceBypass === true,
@@ -235,6 +236,39 @@ export async function setTags(uid, tags) {
     lastProfileChangeAt: serverTimestamp()
   });
   return { ok: true, uid: targetUid, tags: cleanTags };
+}
+
+const ADMIN_GRANTABLE_EVENT_THEMES = new Set(["WinterEvent", "BirthdayEvent"]);
+
+export async function setOwnedEventTheme(uid, themeId, grant = true) {
+  const targetUid = String(uid ?? "");
+  const id = String(themeId ?? "");
+  if (!targetUid) throw new Error("uid-required");
+  if (!ADMIN_GRANTABLE_EVENT_THEMES.has(id)) throw new Error("Dieses Event-Theme kann nicht vergeben werden.");
+
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("Bitte melde dich erneut an.");
+  const adminSnap = await getDoc(doc(db, "users", currentUser.uid));
+  const adminProfile = adminSnap.exists() ? adminSnap.data() || {} : {};
+  if (adminProfile.disabled === true || !Array.isArray(adminProfile.tags) || !adminProfile.tags.includes("admin")) {
+    throw new Error("Nur aktive Admins dürfen Event-Themes vergeben.");
+  }
+
+  const targetRef = doc(db, "users", targetUid);
+  const targetSnap = await getDoc(targetRef);
+  if (!targetSnap.exists()) throw new Error("Für diesen Account existiert noch kein TobiServices-Profil.");
+  const target = targetSnap.data() || {};
+  const currentOwned = Array.isArray(target.ownedThemes) ? target.ownedThemes : [];
+  const nextOwned = [...new Set(grant ? [...currentOwned, id] : currentOwned.filter(value => value !== id))];
+  if (nextOwned.length > 30) throw new Error("Für dieses Konto sind bereits zu viele Themes gespeichert.");
+
+  const update = {
+    ownedThemes: nextOwned,
+    lastProfileChangeAt: serverTimestamp()
+  };
+  if (!grant && target.equippedTheme === id) update.equippedTheme = "Next";
+  await updateDoc(targetRef, update);
+  return { ok: true, uid: targetUid, ownedThemes: nextOwned, granted: Boolean(grant), themeId: id };
 }
 
 export async function setGoldCoins(uid, amount) {
