@@ -22,6 +22,25 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(uid);
     }
 
+    function eligibleForJdnextReward(uid) {
+      return isAccountUser()
+        && exists(userPath(uid))
+        && get(userPath(uid)).data.goldCoins is int
+        && get(userPath(uid)).data.goldCoins > -50
+        && get(userPath(uid)).data.disabled != true;
+    }
+
+    function mayPostWithoutJdnextReward(uid) {
+      return !isAccountUser()
+        || (
+          exists(userPath(uid))
+          && (
+            get(userPath(uid)).data.disabled == true
+            || get(userPath(uid)).data.goldCoins <= -50
+          )
+        );
+    }
+
     function homeworkPath(hwKey, entryId) {
       return /databases/$(database)/documents/jdnextHomework/$(hwKey)/entries/$(entryId);
     }
@@ -265,10 +284,11 @@ service cloud.firestore {
         && ownerAfter.data.authorAuthUid == request.auth.uid
         && (
           (ownerAfter.data.authorTobiUid == null
+            && mayPostWithoutJdnextReward(request.auth.uid)
             && !existsAfter(coinEventPath(rewardEventId)))
           ||
           (ownerAfter.data.authorTobiUid == request.auth.uid
-            && isAccountUser()
+            && eligibleForJdnextReward(request.auth.uid)
             && validPostBatch(request.auth.uid, rewardEventId))
         );
     }
@@ -421,10 +441,11 @@ service cloud.firestore {
         && getAfter(homeworkPath(hwKey, entryId)).data.reportCount == 0
         && (
           (request.resource.data.authorTobiUid == null
+            && mayPostWithoutJdnextReward(request.auth.uid)
             && !existsAfter(coinEventPath('reward-' + hwKey + '-' + entryId)))
           ||
           (request.resource.data.authorTobiUid == request.auth.uid
-            && isAccountUser()
+            && eligibleForJdnextReward(request.auth.uid)
             && validPostBatch(request.auth.uid, 'reward-' + hwKey + '-' + entryId))
         );
       allow update: if false;
