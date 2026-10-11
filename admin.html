@@ -25,6 +25,8 @@
 .coin-actions{align-items:flex-end}
 .coin-actions label{display:flex;align-items:center;gap:8px;flex:1 1 220px;color:var(--muted);font-size:12px}
 .coin-actions .coinInput{max-width:190px}
+.event-theme-actions .eventThemeSelect{flex:1 1 190px;min-width:0}
+.event-theme-status{color:var(--muted);font-size:12px;margin:8px 0 0;overflow-wrap:anywhere}
 </style>
 </head>
 <body class="jd-page">
@@ -32,6 +34,10 @@
   <div class="jd-topbar">
     <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span><div class="jd-logo-main"><span>ADMIN</span><span class="l2">CENTER</span></div></div>
     <div style="display:flex;gap:8px;align-items:center"><button class="jd-btn-ghost" id="accountBtn">Account</button><span class="jd-pill" id="status">Prüfe Zugriff …</span></div>
+  </div>
+  <div class="actions" aria-label="Projekt-Schnellzugriff" style="margin-top:12px">
+    <a class="jd-btn-ghost" href="https://hannonuppi.github.io/JDNEXT_UNTIS/" target="_blank" rel="noopener noreferrer">Untis Next ↗</a>
+    <a class="jd-btn-ghost" href="https://hannonuppi.github.io/JDNEXT-UI/" target="_blank" rel="noopener noreferrer">JDNEXT ↗</a>
   </div>
 
   <section class="jd-card" id="createCard" style="margin-top:16px;display:none">
@@ -95,7 +101,7 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
+import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setOwnedEventTheme,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore,collection,getDocs,doc,getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -104,6 +110,10 @@ const OLD_CONFIG={apiKey:"AIzaSyBgkWUtFIH63yJUw4zTbNtplKL5HqDDXMg",authDomain:"n
 const untisDb=getFirestore(initializeApp(OLD_CONFIG,"TobiAdminUntis"));
 const JDNEXT_URL="https://hannonuppi.github.io/JDNEXT_UNTIS/";
 let users=[];let selected=new Set();
+const EVENT_THEME_OPTIONS=[
+  {id:"WinterEvent",name:"Winterwunder"},
+  {id:"BirthdayEvent",name:"Birthday Bash"}
+];
 
 function escapeHtml(v){
   return String(v??"").replace(/[&<>"']/g,function(c){
@@ -149,7 +159,8 @@ function renderUsers(){
     return "<div class=\"jd-card\" data-uid=\""+escapeHtml(u.uid)+"\">"+
       "<div style=\"display:flex;gap:10px\"><input class=\"check\" type=\"checkbox\" "+(selected.has(u.uid)?"checked":"")+"><div>"+
       "<h3 class=\"username\"></h3><p class=\"uname\"></p><div class=\"mono uid\"></div></div></div>"+
-      "<div class=\"chips\"></div><div class=\"actions coin-actions\"><label>Goldmünzen <input class=\"jd-input coinInput\" type=\"number\" min=\"-9007199254740991\" max=\"9007199254740991\" step=\"1\" inputmode=\"numeric\"></label><button class=\"jd-btn-ghost\" data-save-coins>Saldo speichern</button></div><div class=\"actions\">"+
+      "<div class=\"chips\"></div><div class=\"actions coin-actions\"><label>Goldmünzen <input class=\"jd-input coinInput\" type=\"number\" min=\"-9007199254740991\" max=\"9007199254740991\" step=\"1\" inputmode=\"numeric\"></label><button class=\"jd-btn-ghost\" data-save-coins>Saldo speichern</button></div>"+
+      "<div class=\"actions event-theme-actions\"><select class=\"jd-input eventThemeSelect\" aria-label=\"Event-Theme auswählen\"><option value=\"WinterEvent\">Winterwunder</option><option value=\"BirthdayEvent\">Birthday Bash</option></select><button class=\"jd-btn-ghost\" data-grant-event-theme>Theme vergeben</button><button class=\"jd-btn-ghost\" data-revoke-event-theme>Theme entziehen</button></div><p class=\"event-theme-status\"></p><div class=\"actions\">"+
       "<input class=\"jd-input tagInput\" maxlength=\"24\" placeholder=\"Tag hinzufügen\">"+
       "<button class=\"jd-btn-ghost\" data-add>Hinzufügen</button>"+
       "<button class=\"jd-btn-ghost\" data-copy>UID kopieren</button>"+
@@ -164,6 +175,10 @@ function renderUsers(){
     card.querySelector(".uname").textContent=u.email||u.username||"(keine E-Mail)";
     card.querySelector(".uid").textContent=u.uid;
     card.querySelector(".coinInput").value=String(Number.isSafeInteger(u.goldCoins)?u.goldCoins:0);
+    const ownedEventNames=EVENT_THEME_OPTIONS.filter(theme=>(Array.isArray(u.ownedThemes)?u.ownedThemes:[]).includes(theme.id)).map(theme=>theme.name);
+    card.querySelector(".event-theme-status").textContent=ownedEventNames.length
+      ? "Freigeschaltet: "+ownedEventNames.join(", ")
+      : "Keine Event-Themes freigeschaltet.";
     (Array.isArray(u.tags)?u.tags:[]).forEach(function(tag){
       const chip=document.createElement("span");chip.className="chip";chip.append(tag+" ");
       if(tag==="admin"&&u.uid===auth.currentUser?.uid){
@@ -247,8 +262,19 @@ $("#userList").addEventListener("click",async function(e){
   const card=e.target.closest("[data-uid]");if(!card)return;
   const u=users.find(function(x){return x.uid===card.dataset.uid;});if(!u)return;
   if(e.target.matches("input[type=checkbox]")){if(e.target.checked)selected.add(u.uid);else selected.delete(u.uid);renderUsers();return;}
-  const button=e.target.closest("[data-add],[data-rm],[data-copy],[data-toggle],[data-save-coins]");if(!button)return;
+  const button=e.target.closest("[data-add],[data-rm],[data-copy],[data-toggle],[data-save-coins],[data-grant-event-theme],[data-revoke-event-theme]");if(!button)return;
   try{
+    if(button.hasAttribute("data-grant-event-theme")||button.hasAttribute("data-revoke-event-theme")){
+      const themeId=card.querySelector(".eventThemeSelect").value;
+      const theme=EVENT_THEME_OPTIONS.find(item=>item.id===themeId);
+      if(!theme)return jdToast("Bitte ein gültiges Event-Theme auswählen.");
+      const grant=button.hasAttribute("data-grant-event-theme");
+      const result=await setOwnedEventTheme(u.uid,themeId,grant);
+      u.ownedThemes=result.ownedThemes;
+      renderUsers();
+      jdToast((grant?"Freigeschaltet: ":"Entzogen: ")+theme.name);
+      return;
+    }
     if(button.hasAttribute("data-save-coins")){
       const input=card.querySelector(".coinInput");
       const raw=input.value.trim();
