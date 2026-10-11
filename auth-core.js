@@ -64,10 +64,14 @@ export async function login(email, password) {
   }
 
   const result = await signInWithEmailAndPassword(auth, normalizedEmail, secret);
-  return {
-    user: result.user,
-    profile: await getProfile(result.user.uid)
-  };
+  const profile = await getProfile(result.user.uid);
+  if (profile?.disabled === true) {
+    await firebaseSignOut(auth);
+    const error = new Error("Dieses TobiServices-Konto ist gesperrt. Bitte wende dich an einen Admin.");
+    error.code = "account-disabled-by-moderation";
+    throw error;
+  }
+  return { user: result.user, profile };
 }
 
 // Old username/password accounts relied on Cloud Functions and are not
