@@ -152,7 +152,7 @@ export const hasTag = (profile, tag) =>
   Array.isArray(profile?.tags) &&
   profile.tags.includes(String(tag).toLowerCase());
 
-export const isAdmin = profile => hasTag(profile, "admin");
+export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, "admin");
 
 export async function createAccount() {
   const error = new Error("Das Anlegen von Accounts erfolgt über Firebase Authentication → Users.");
