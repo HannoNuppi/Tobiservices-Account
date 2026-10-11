@@ -5,7 +5,7 @@ Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Account Cente
 ## Einmalige Einrichtung ohne Terminal
 
 1. Öffne die [Firebase Console](https://console.firebase.google.com/) und wähle das Projekt `tobiservices`.
-2. Unter **Authentication → Sign-in method** müssen **E-Mail/Passwort** und **Anonym** aktiviert sein. Anonyme Sitzungen ermöglichen Hausaufgaben posten und melden ohne TobiServices-Account. Neue Nutzer legst du unter **Authentication → Users** an.
+2. Unter **Authentication → Sign-in method** müssen **E-Mail/Passwort** und **Anonym** aktiviert sein. Anonyme Sitzungen ermöglichen Hausaufgaben posten und melden ohne TobiServices-Account. Neue Nutzer können sich selbst auf der Login-Seite über **„Neues Konto erstellen“** registrieren; ihr Firestore-Profil wird beim ersten erfolgreichen Login erzeugt.
 3. Öffne **Firestore Database → Rules**.
 4. Ersetze dort die Regeln durch den Inhalt von [`firestore.rules`](https://github.com/HannoNuppi/Tobiservices-Account/blob/main/firestore.rules) und klicke auf **Publish**. Diese Schritte benötigen kein lokales Projektverzeichnis und keinen Cloud-Functions-Deploy.
 5. Öffne das Admin Center neu und melde dich mit dem Konto an, dessen Dokument `users/{UID}` bereits `tags: ["admin"]` hat.
@@ -15,7 +15,7 @@ Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Account Cente
 ## So funktioniert das Spark-kompatible Modell
 
 - Neue Firebase-Auth-Nutzer erhalten beim ersten erfolgreichen Profil-Lesevorgang ein Firestore-Profil `users/{UID}`, falls es noch fehlt. Die Regeln erlauben dabei nur `tags: []` und `goldCoins: 0`.
-- Das Admin Center listet nur Profile aus `users`. Ein Konto, das nur in Firebase Authentication angelegt und noch nie bei einem TobiServices-Dienst angemeldet wurde, erscheint erst nach dem ersten Login.
+- Das Admin Center listet Profile aus `users`. Ein neu registriertes Konto erscheint dort nach dem ersten erfolgreichen Login, sobald sein Profil erstellt wurde.
 - Bestehende Admins dürfen Tags und Dienstzugriff verwalten, JDNEXT-Wartung aktivieren und den Coinstand von Profilen ändern. Das eigene Admin-Tag ist beim eigenen Profil geschützt.
 - Admins können ihren persönlichen Wartungsbypass in JDNEXT aktivieren; der Schalter wird im eigenen Profil gespeichert und wirkt nur auf die JDNEXT-Wartungsseite.
 - Der Schalter **Dienste sperren** setzt `users/{UID}.disabled = true`. Das deaktiviert nicht das Firebase-Authentication-Konto an sich; jede angebundene Website muss das Feld beachten.
