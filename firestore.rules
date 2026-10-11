@@ -14,7 +14,8 @@ service cloud.firestore {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags is list
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags.hasAny(['admin']);
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tags.hasAny(['admin'])
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled != true;
     }
 
     function userPath(uid) {
