@@ -10,6 +10,8 @@ import {
   setPersistence,
   browserLocalPersistence,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   signOut as firebaseSignOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
@@ -154,10 +156,40 @@ export const hasTag = (profile, tag) =>
 
 export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, "admin");
 
-export async function createAccount() {
-  const error = new Error("Das Anlegen von Accounts erfolgt über Firebase Authentication → Users.");
-  error.code = "account-creation-use-firebase-console";
-  throw error;
+export async function createAccount(email, password, displayName) {
+  const normalizedEmail = String(email ?? "").trim();
+  const secret = String(password ?? "");
+  const cleanName = String(displayName ?? "").replace(/[\\u0000-\\u001f\\u007f]/g, "").trim().slice(0, 80);
+
+  if (!normalizedEmail || !secret || !cleanName) {
+    throw new Error("Bitte Name, E-Mail-Adresse und Passwort ausfüllen.");
+  }
+  if (secret.length < 8) {
+    const error = new Error("Das Passwort muss mindestens 8 Zeichen lang sein.");
+    error.code = "auth/weak-password";
+    throw error;
+  }
+  if (secret.length > 128) {
+    throw new Error("Das Passwort darf höchstens 128 Zeichen lang sein.");
+  }
+
+  const result = await createUserWithEmailAndPassword(auth, normalizedEmail, secret);
+  try {
+    await updateProfile(result.user, { displayName: cleanName });
+    const profile = await getProfile(result.user.uid);
+    if (profile?.disabled === true) {
+      await firebaseSignOut(auth);
+      const error = new Error("Dieses Konto ist gesperrt.");
+      error.code = "account-disabled-by-moderation";
+      throw error;
+    }
+    return { user: result.user, profile };
+  } catch (error) {
+    // Auth account is already created at this point. A later login retries
+    // creation of the profile through getProfile() if Firestore was unavailable.
+    console.error("Account ist erstellt, das Profil konnte aber nicht vollständig initialisiert werden:", error);
+    throw error;
+  }
 }
 
 export async function listUsers() {
