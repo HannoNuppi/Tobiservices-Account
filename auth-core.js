@@ -159,7 +159,7 @@ export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, 
 export async function createAccount(email, password, displayName) {
   const normalizedEmail = String(email ?? "").trim();
   const secret = String(password ?? "");
-  const cleanName = String(displayName ?? "").replace(/[\\u0000-\\u001f\\u007f]/g, "").trim().slice(0, 80);
+  const cleanName = String(displayName ?? "").replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 80);
 
   if (!normalizedEmail || !secret || !cleanName) {
     throw new Error("Bitte Name, E-Mail-Adresse und Passwort ausfüllen.");
