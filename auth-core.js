@@ -432,7 +432,7 @@ export async function setTags(uid, tags) {
   return { ok: true, uid: targetUid, tags: cleanTags };
 }
 
-const ADMIN_GRANTABLE_EVENT_THEMES = new Set(["WinterEvent", "BirthdayEvent"]);
+const ADMIN_GRANTABLE_EVENT_THEMES = new Set(["WinterEvent", "BirthdayEvent", "HalloweenEvent"]);
 
 export async function setOwnedEventTheme(uid, themeId, grant = true) {
   const targetUid = String(uid ?? "");
