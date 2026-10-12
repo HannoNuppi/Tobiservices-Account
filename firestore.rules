@@ -494,8 +494,24 @@ service cloud.firestore {
           )
         )
       ) || (
-        // Ein Konto kann Halloween nur einmal selbst freischalten, und nur
-        // indem es an Halloween genau dieses eine Theme zu ownedThemes hinzufügt.
+        // Admins may grant/revoke approved event themes for another account.
+        isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownedThemes', 'equippedTheme', 'lastProfileChangeAt'
+        ])
+        && request.resource.data.ownedThemes is list
+        && request.resource.data.ownedThemes.size() <= 30
+        && request.resource.data.lastProfileChangeAt == request.time
+        && (
+          !('equippedTheme' in request.resource.data)
+          || request.resource.data.equippedTheme == 'Next'
+          || (
+            validThemeSelection(request.resource.data.equippedTheme)
+            && request.resource.data.ownedThemes.hasAny([request.resource.data.equippedTheme])
+          )
+        )
+      ) || (
+        // An account may self-unlock Halloween only once on the event date.
         ownProfile(uid)
         && isAccountUser()
         && isHalloweenUnlockWindow()
