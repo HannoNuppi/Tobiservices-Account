@@ -133,8 +133,15 @@ export async function getProfile(uid = auth.currentUser?.uid) {
 }
 
 function isLocalHalloweenDate() {
-  const now = new Date();
-  return now.getMonth() === 9 && now.getDate() === 31;
+  // Event eligibility must use the same calendar date on every device.
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin",
+    month: "numeric",
+    day: "numeric"
+  }).formatToParts(new Date());
+  const month = Number(parts.find(part => part.type === "month")?.value);
+  const day = Number(parts.find(part => part.type === "day")?.value);
+  return month === 10 && day === 31;
 }
 
 async function maybeGrantHalloweenThemeOnLogin(user, profile) {
@@ -171,18 +178,27 @@ async function maybeGrantHalloweenThemeOnLogin(user, profile) {
 
 export function onUser(callback) {
   return onAuthStateChanged(auth, async user => {
-    // Anonyme JDNEXT-Sitzungen dürfen posten und melden, sind aber kein
-    // angemeldeter TobiServices-Account und sollen den Login nicht blockieren.
+    // Anonymous JDNEXT identities are not TobiServices accounts.
     if (!user || user.isAnonymous) {
       callback(null, null);
       return;
     }
 
+    const stillCurrent = () =>
+      auth.currentUser?.uid === user.uid && auth.currentUser.isAnonymous !== true;
+
     try {
       let profile = await getProfile(user.uid);
+      // Profile reads may finish after a quick sign-out or account switch.
+      if (!stillCurrent()) return;
+
       profile = await maybeGrantHalloweenThemeOnLogin(user, profile);
+      if (!stillCurrent()) return;
+
       callback(user, profile);
     } catch (error) {
+      // A stale request must never overwrite the session of the new account.
+      if (!stillCurrent()) return;
       console.error("Accountprofil konnte nicht geladen werden:", error);
       callback(user, null);
     }
