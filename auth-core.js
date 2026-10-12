@@ -212,6 +212,34 @@ export const hasTag = (profile, tag) =>
 
 export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, "admin");
 
+const USER_SELECTABLE_THEMES = new Set([
+  "Next", "Ocean", "Sunset", "Forest", "Candy", "Midnight", "Aurora", "Retro",
+  "RoyalRebels", "Bronze", "Silver", "Gold", "WinterEvent", "BirthdayEvent", "HalloweenEvent"
+]);
+
+// Change the equipped theme using the same authenticated Firebase session as the Account Center.
+// Admin Matrix is intentionally local-only and is guarded by the current admin tag in Untis Next.
+export async function setEquippedTheme(themeId) {
+  const id = String(themeId ?? "");
+  if (!USER_SELECTABLE_THEMES.has(id)) throw new Error("Dieses Theme kann nicht ausgewählt werden.");
+  if (id === "AdminMatrix") throw new Error("Admin Matrix wird lokal mit dem aktiven admin-Tag aktiviert.");
+
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.isAnonymous) throw new Error("Bitte melde dich erneut im TobiServices Account an.");
+
+  const profile = await getProfile(currentUser.uid);
+  if (!profile || profile.disabled === true) throw new Error("Dein TobiServices-Konto ist nicht verfügbar oder gesperrt.");
+
+  const owned = Array.isArray(profile.ownedThemes) ? profile.ownedThemes : [];
+  if (id !== "Next" && !owned.includes(id)) {
+    throw new Error("Dieses Theme ist für dein Konto nicht freigeschaltet.");
+  }
+
+  await updateDoc(doc(db, "users", currentUser.uid), { equippedTheme: id });
+  return { ...profile, equippedTheme: id };
+}
+
+
 export const ACCESS_RESOURCES = Object.freeze({
   "test-mode": "Untis Next Test Mode",
   "jdnext": "JDNEXT",
