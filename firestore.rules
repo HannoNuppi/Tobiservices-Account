@@ -303,7 +303,16 @@ service cloud.firestore {
     function validThemeSelection(themeId) {
       return themeId is string
         && ['Next', 'Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro',
-          'RoyalRebels', 'Bronze', 'Silver', 'Gold', 'WinterEvent', 'BirthdayEvent'].hasAny([themeId]);
+          'RoyalRebels', 'Bronze', 'Silver', 'Gold', 'WinterEvent', 'BirthdayEvent',
+          'AdminMatrix', 'HalloweenEvent'].hasAny([themeId]);
+    }
+
+    // Ermöglicht die Halloween-Freischaltung am 31. Oktober nach lokaler Uhr
+    // in Deutschland oder an der US-Westküste (request.time wird in UTC geprüft).
+    function isHalloweenUnlockWindow() {
+      return (request.time.month() == 10 && request.time.day() == 30 && request.time.hours() >= 22)
+        || (request.time.month() == 10 && request.time.day() == 31)
+        || (request.time.month() == 11 && request.time.day() == 1 && request.time.hours() < 7);
     }
 
     // Ein Kauf ist nur gültig, wenn Profilabbuchung und Event atomar zusammenpassen.
@@ -483,6 +492,31 @@ service cloud.firestore {
             validThemeSelection(request.resource.data.equippedTheme)
             && request.resource.data.ownedThemes.hasAny([request.resource.data.equippedTheme])
           )
+        )
+      ) || (
+        // Ein Konto kann Halloween nur einmal selbst freischalten, und nur
+        // indem es an Halloween genau dieses eine Theme zu ownedThemes hinzufügt.
+        ownProfile(uid)
+        && isAccountUser()
+        && isHalloweenUnlockWindow()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownedThemes', 'halloweenUnlockedAt', 'lastProfileChangeAt'
+        ])
+        && !('halloweenUnlockedAt' in resource.data)
+        && request.resource.data.halloweenUnlockedAt == request.time
+        && request.resource.data.lastProfileChangeAt == request.time
+        && request.resource.data.ownedThemes is list
+        && request.resource.data.ownedThemes.size() <= 30
+        && request.resource.data.ownedThemes.hasAny(['HalloweenEvent'])
+        && (
+          (!('ownedThemes' in resource.data)
+            && request.resource.data.ownedThemes.size() == 1)
+          ||
+          (('ownedThemes' in resource.data)
+            && resource.data.ownedThemes is list
+            && !resource.data.ownedThemes.hasAny(['HalloweenEvent'])
+            && request.resource.data.ownedThemes.size() == resource.data.ownedThemes.size() + 1
+            && request.resource.data.ownedThemes.hasAll(resource.data.ownedThemes))
         )
       ) || (
         ownProfile(uid)
