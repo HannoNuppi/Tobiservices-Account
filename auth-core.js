@@ -20,6 +20,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  runTransaction,
   serverTimestamp,
   collection,
   getDocs,
@@ -131,6 +132,43 @@ export async function getProfile(uid = auth.currentUser?.uid) {
   return asProfile(uid, data);
 }
 
+function isLocalHalloweenDate() {
+  const now = new Date();
+  return now.getMonth() === 9 && now.getDate() === 31;
+}
+
+async function maybeGrantHalloweenThemeOnLogin(user, profile) {
+  if (!user || user.isAnonymous || !profile || profile.disabled === true || !isLocalHalloweenDate()) {
+    return profile;
+  }
+  const profileOwned = Array.isArray(profile.ownedThemes) ? profile.ownedThemes : [];
+  if (profileOwned.includes("HalloweenEvent") || profile.halloweenUnlockedAt) return profile;
+
+  try {
+    const profileRef = doc(db, "users", user.uid);
+    const granted = await runTransaction(db, async transaction => {
+      const snapshot = await transaction.get(profileRef);
+      if (!snapshot.exists()) return false;
+      const latest = snapshot.data() || {};
+      const owned = Array.isArray(latest.ownedThemes) ? latest.ownedThemes : [];
+      if (latest.disabled === true || latest.halloweenUnlockedAt || owned.includes("HalloweenEvent")) return false;
+      if (owned.length >= 30) return false;
+
+      transaction.update(profileRef, {
+        ownedThemes: [...owned, "HalloweenEvent"],
+        halloweenUnlockedAt: serverTimestamp(),
+        lastProfileChangeAt: serverTimestamp()
+      });
+      return true;
+    });
+    return granted ? await getProfile(user.uid) : profile;
+  } catch (error) {
+    // The matching Firestore rule validates the server-side date and the one-time grant.
+    console.warn("Halloween-Theme konnte nicht automatisch freigeschaltet werden:", error);
+    return profile;
+  }
+}
+
 export function onUser(callback) {
   return onAuthStateChanged(auth, async user => {
     // Anonyme JDNEXT-Sitzungen dürfen posten und melden, sind aber kein
@@ -141,7 +179,8 @@ export function onUser(callback) {
     }
 
     try {
-      const profile = await getProfile(user.uid);
+      let profile = await getProfile(user.uid);
+      profile = await maybeGrantHalloweenThemeOnLogin(user, profile);
       callback(user, profile);
     } catch (error) {
       console.error("Accountprofil konnte nicht geladen werden:", error);
