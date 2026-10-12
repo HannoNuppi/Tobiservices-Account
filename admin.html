@@ -152,7 +152,8 @@ const JDNEXT_URL="https://hannonuppi.github.io/JDNEXT_UNTIS/";
 let users=[];let selected=new Set();let accessControl=null;
 const EVENT_THEME_OPTIONS=[
   {id:"WinterEvent",name:"Winterwunder"},
-  {id:"BirthdayEvent",name:"Birthday Bash"}
+  {id:"BirthdayEvent",name:"Birthday Bash"},
+  {id:"HalloweenEvent",name:"Halloween Afterdark"}
 ];
 
 function escapeHtml(v){
@@ -244,7 +245,7 @@ function renderUsers(){
       "<div style=\"display:flex;gap:10px\"><input class=\"check\" type=\"checkbox\" "+(selected.has(u.uid)?"checked":"")+"><div>"+
       "<h3 class=\"username\"></h3><p class=\"uname\"></p><div class=\"mono uid\"></div></div></div>"+
       "<div class=\"chips\"></div><div class=\"actions coin-actions\"><label>Goldmünzen <input class=\"jd-input coinInput\" type=\"number\" min=\"-9007199254740991\" max=\"9007199254740991\" step=\"1\" inputmode=\"numeric\"></label><button class=\"jd-btn-ghost\" data-save-coins>Saldo speichern</button></div>"+
-      "<div class=\"actions event-theme-actions\"><select class=\"jd-input eventThemeSelect\" aria-label=\"Event-Theme auswählen\"><option value=\"WinterEvent\">Winterwunder</option><option value=\"BirthdayEvent\">Birthday Bash</option></select><button class=\"jd-btn-ghost\" data-grant-event-theme>Theme vergeben</button><button class=\"jd-btn-ghost\" data-revoke-event-theme>Theme entziehen</button></div><p class=\"event-theme-status\"></p><div class=\"actions\">"+
+      "<div class=\"actions event-theme-actions\"><select class=\"jd-input eventThemeSelect\" aria-label=\"Event-Theme auswählen\"><option value=\"WinterEvent\">Winterwunder</option><option value=\"BirthdayEvent\">Birthday Bash</option><option value=\"HalloweenEvent\">Halloween Afterdark</option></select><button class=\"jd-btn-ghost\" data-grant-event-theme>Theme vergeben</button><button class=\"jd-btn-ghost\" data-revoke-event-theme>Theme entziehen</button></div><p class=\"event-theme-status\"></p><div class=\"actions\">"+
       "<select class=\"jd-input tagInput\" aria-label=\"Tag auswählen\"></select>"+
       "<button class=\"jd-btn-ghost\" data-add>Hinzufügen</button>"+
       "<button class=\"jd-btn-ghost\" data-copy>UID kopieren</button>"+
