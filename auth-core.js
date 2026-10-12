@@ -18,6 +18,7 @@ import {
   getFirestore,
   doc,
   getDoc,
+  getDocFromServer,
   setDoc,
   updateDoc,
   runTransaction,
@@ -83,6 +84,19 @@ export async function loginLegacy() {
   const error = new Error("Legacy-Login benötigt das bisherige Cloud-Functions-Backend.");
   error.code = "legacy-login-requires-cloud-functions";
   throw error;
+}
+
+// Read the latest profile directly from the server. Untis Next uses this to
+// refresh granted themes before rendering the theme picker, bypassing stale
+// Firestore cache snapshots from the legacy Compat listener.
+export async function refreshProfileFromServer(uid = auth.currentUser?.uid) {
+  const currentUser = auth.currentUser;
+  if (!uid || !currentUser || currentUser.isAnonymous || currentUser.uid !== uid) {
+    return null;
+  }
+  const snap = await getDocFromServer(doc(db, "users", uid));
+  if (!snap.exists()) return null;
+  return asProfile(uid, snap.data() || {});
 }
 
 export async function getProfile(uid = auth.currentUser?.uid) {
