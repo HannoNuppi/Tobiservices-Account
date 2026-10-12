@@ -168,7 +168,8 @@ async function maybeGrantHalloweenThemeOnLogin(user, profile) {
       });
       return true;
     });
-    return granted ? await getProfile(user.uid) : profile;
+    // Re-read even when another concurrent grant won the transaction race.
+    return await getProfile(user.uid);
   } catch (error) {
     // The matching Firestore rule validates the server-side date and the one-time grant.
     console.warn("Halloween-Theme konnte nicht automatisch freigeschaltet werden:", error);
