@@ -157,7 +157,8 @@ export async function getProfile(uid = auth.currentUser?.uid) {
   // metadata; they never grant tags, permissions or admin access.
   const cosmeticDefaults = {};
   if (!Object.prototype.hasOwnProperty.call(data, "profileTitle")) cosmeticDefaults.profileTitle = "";
-  if (!Object.prototype.hasOwnProperty.call(data, "profileIcon")) cosmeticDefaults.profileIcon = DEFAULT_PROFILE_ICON;
+  // 🌟 was the previous automatic default; treat it as unset for accounts created before the no-icon default.
+  if (!Object.prototype.hasOwnProperty.call(data, "profileIcon") || data.profileIcon === "🌟") cosmeticDefaults.profileIcon = DEFAULT_PROFILE_ICON;
   if (Object.keys(cosmeticDefaults).length) {
     try {
       await updateDoc(profileRef, {
