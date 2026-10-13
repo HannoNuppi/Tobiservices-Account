@@ -21,7 +21,7 @@
 </div>
 <script src="theme.js"></script>
 <script type="module">
-import { onUser, signOut, isAdmin, CONFIG } from "./auth-core.js?rev=account-rollback-1";
+import { onUser, signOut, isAdmin, CONFIG, PROFILE_TITLES, PROFILE_ICONS, updateCosmeticProfile } from "./auth-core.js?rev=profile-customization-20261013";
 const app=document.getElementById("app");
 
 onUser((user,profile)=>{
@@ -38,21 +38,42 @@ onUser((user,profile)=>{
 
   const tags=Array.isArray(profile.tags)?profile.tags:[];
   const accountEmail=profile.email||user.email||"";
+  let activeProfile={...profile};
+  const titleOptions=PROFILE_TITLES.map(item=>"<option value=\""+item.value.replace(/&/g,"&amp;").replace(/"/g,"&quot;")+"\">"+item.label+"</option>").join("");
+  const iconOptions=PROFILE_ICONS.map(icon=>"<option value=\""+icon+"\">"+icon+"</option>").join("");
   app.innerHTML=
     "<div class=\"jd-card\">"
-    +"<h3 id=\"name\"></h3>"
-    +"<p>TobiServices Account</p>"
+    +"<div style=\"display:flex;align-items:center;gap:13px;margin-bottom:14px\">"
+      +"<div id=\"profilePreviewIcon\" aria-label=\"Profil-Icon\" style=\"width:62px;height:62px;border-radius:20px;display:grid;place-items:center;background:linear-gradient(135deg,var(--pink),var(--violet));font-size:34px;box-shadow:0 8px 28px #0003\"></div>"
+      +"<div style=\"min-width:0;flex:1\"><h3 id=\"name\" style=\"margin:0\"></h3><div id=\"profilePreviewTitle\" style=\"color:var(--gold);font-size:13px;margin-top:3px\"></div><p style=\"margin:3px 0 0\">TobiServices Account</p></div>"
+    +"</div>"
     +(profile.disabled===true?"<div style=\"margin:12px 0;padding:12px;border:1px solid rgba(255,62,120,.65);border-radius:12px;background:rgba(255,62,120,.09);color:var(--text);font-size:13px;line-height:1.5\"><strong>Account auf Dienstebene gesperrt</strong><br>Dein Konto bleibt erhalten. Verbundene TobiServices-Dienste sollen diesen Sperrstatus beachten. Im Spark-Tarif kann die Anmeldung selbst nicht automatisch deaktiviert werden.</div>":"")
     +"<div class=\"wallet-balance\"><div class=\"wallet-coin-icon\" aria-hidden=\"true\">✦</div><div class=\"wallet-copy\"><span>GOLDMÜNZEN</span><strong id=\"goldCoins\">0</strong><small>Gemeinsames Guthaben über alle TobiServices-Dienste</small></div></div>"
-    +"<div style=\"margin-top:16px\"><div style=\"font-size:12px;color:var(--muted);margin-bottom:7px\">Tags</div><div id=\"tags\" style=\"display:flex;gap:8px;flex-wrap:wrap\"></div></div>"
+    +"<div style=\"margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--card)\">"
+      +"<h3 style=\"margin:0 0 6px\">Profil gestalten</h3><p style=\"margin:0 0 12px;color:var(--muted);font-size:12px\">Titel und Icons sind rein kosmetisch. Sie vergeben ausdrücklich keine Tags oder Rechte.</p>"
+      +"<label for=\"profileTitleSelect\" style=\"display:block;font-size:12px;margin-bottom:5px\">Profil-Titel</label><select id=\"profileTitleSelect\" class=\"jd-input\" style=\"width:100%;margin-bottom:10px\">"+titleOptions+"</select>"
+      +"<label for=\"profileIconSelect\" style=\"display:block;font-size:12px;margin-bottom:5px\">Profil-Icon</label><select id=\"profileIconSelect\" class=\"jd-input\" style=\"width:100%;margin-bottom:10px\">"+iconOptions+"</select>"
+      +"<button class=\"jd-btn\" id=\"saveProfileDesign\" type=\"button\">Profil speichern</button><span id=\"profileSaveStatus\" role=\"status\" style=\"font-size:12px;margin-left:9px\"></span>"
+    +"</div>"
+    +"<div style=\"margin-top:16px\"><div style=\"font-size:12px;color:var(--muted);margin-bottom:7px\">Tags (diese regeln Rechte)</div><div id=\"tags\" style=\"display:flex;gap:8px;flex-wrap:wrap\"></div></div>"
     +"<div style=\"margin-top:16px;font-size:11px;color:var(--muted)\">E-Mail-Adresse<div id=\"email\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
     +"<div style=\"margin-top:12px;font-size:11px;color:var(--muted)\">Account-ID<div id=\"uid\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
     +"<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-top:18px\">"
     +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
-    +"<a class=\"jd-btn\" id=\"downloadApk\" href=\"https://hannonuppi.github.io/JDNEXT_UNTIS/UntisNext.apk\" download=\"UntisNext.apk\">Neueste Untis-Next-APK herunterladen ↓</a>"
+    +"<a class=\"jd-btn\" href=\"https://hannonuppi.github.io/JDNEXT_UNTIS/\">Untis Next öffnen</a>"
     +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
 
-  document.getElementById("name").textContent=user.displayName||profile.displayName||user.email||"TobiServices";
+  const accountName=user.displayName||profile.displayName||user.email||"TobiServices";
+  const paintCosmetics=()=>{
+    const icon=PROFILE_ICONS.includes(activeProfile.profileIcon)?activeProfile.profileIcon:"🌟";
+    const title=PROFILE_TITLES.find(item=>item.value===(activeProfile.profileTitle||""))?.label||"";
+    document.getElementById("profilePreviewIcon").textContent=icon;
+    document.getElementById("profilePreviewTitle").textContent=title;
+    document.getElementById("name").textContent=accountName;
+  };
+  paintCosmetics();
+  document.getElementById("profileTitleSelect").value=activeProfile.profileTitle||"";
+  document.getElementById("profileIconSelect").value=activeProfile.profileIcon||"🌟";
   document.getElementById("email").textContent=accountEmail||"(nicht verfügbar)";
   document.getElementById("uid").textContent=user.uid;
   const goldCoins=Number.isSafeInteger(profile.goldCoins)?profile.goldCoins:0;
@@ -64,6 +85,26 @@ onUser((user,profile)=>{
   }else{
     const empty=document.createElement("span"); empty.style.color="var(--muted)"; empty.style.fontSize="13px"; empty.textContent="Keine Tags"; tagBox.appendChild(empty);
   }
+
+  document.getElementById("saveProfileDesign").onclick=async()=>{
+    const button=document.getElementById("saveProfileDesign");
+    const status=document.getElementById("profileSaveStatus");
+    button.disabled=true; status.textContent="Speichere…";
+    try{
+      const updated=await updateCosmeticProfile({
+        profileTitle:document.getElementById("profileTitleSelect").value,
+        profileIcon:document.getElementById("profileIconSelect").value
+      });
+      activeProfile={...activeProfile,...updated};
+      paintCosmetics();
+      status.textContent="Gespeichert ✓";
+    }catch(error){
+      console.error("Profil-Design konnte nicht gespeichert werden:",error);
+      status.textContent=error?.message||"Speichern fehlgeschlagen.";
+    }finally{
+      button.disabled=false;
+    }
+  };
 
   document.getElementById("logout").onclick=async()=>{ await signOut(); location.href=CONFIG.loginUrl; };
   document.getElementById("admin")?.addEventListener("click",()=>{ location.href="./admin.html"; });
