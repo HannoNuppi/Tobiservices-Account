@@ -43,7 +43,11 @@ Wenn das Profil bereits besteht, ändere nur das `tags`-Feld und bewahre andere 
 
 Eine öffentliche, unangemeldete Funktion zum Vergeben von Admin-Rechten ist absichtlich nicht vorgesehen. Jede weitere Rollenänderung wird durch eine Cloud Function geprüft, die die angemeldete UID und deren bereits vorhandenen `admin`-Tag überprüft.
 
-## 4. `siteSettings/jdnext`
+## 4. `publicProfiles/{uid}`
+
+Öffentlich lesbare, bewusst reduzierte Kopie für die Vorschau-Rangliste. Erlaubte Felder sind `displayName`, `profileTitle`, `profileIcon`, `goldCoins` und `updatedAt`. E-Mail-Adressen, Tags und Berechtigungen gehören nicht in diese Collection. Die Firestore-Regeln erlauben einem angemeldeten Nutzer nur den eigenen Eintrag und prüfen, dass Titel, Icon und Goldmünzen mit dem privaten `users/{uid}`-Profil übereinstimmen. Die Profil-Titel sind rein kosmetisch und werden nirgendwo zur Rechteprüfung verwendet.
+
+## 5. `siteSettings/jdnext`
 
 Wartungsstatus für die JDNEXT-Website:
 
@@ -57,11 +61,11 @@ Wartungsstatus für die JDNEXT-Website:
 
 Lesen darf öffentlich möglich sein; Schreiben erfolgt nur über die geschützte Admin-Cloud-Function.
 
-## 5. `tobiAccounts/{usernameKey}` (Legacy)
+## 6. `tobiAccounts/{usernameKey}` (Legacy)
 
 Diese Collection kann ältere Username/Passwort-Konten enthalten. Passwort-Hash und Salt werden serverseitig gehalten und sind durch Firestore-Regeln gesperrt. Neue Firebase-E-Mail-Konten benötigen keinen Eintrag in dieser Collection. Bei noch bestehenden Legacy-Konten synchronisiert die Tag-Funktion die Tags soweit ein entsprechender Legacy-Eintrag vorhanden ist.
 
-## 6. Deployment-Hinweis
+## 7. Deployment-Hinweis
 
 Nach Code-Änderungen:
 
