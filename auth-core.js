@@ -25,6 +25,9 @@ import {
   serverTimestamp,
   collection,
   getDocs,
+  query,
+  orderBy,
+  limit,
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -51,12 +54,26 @@ await setPersistence(auth, browserLocalPersistence);
 
 export const signOut = () => firebaseSignOut(auth);
 
+export const PROFILE_TITLES = Object.freeze([
+  { value: "", label: "Kein Titel" },
+  { value: "Newcomer", label: "Newcomer" },
+  { value: "Dance Fan", label: "Dance Fan" },
+  { value: "Gold Collector", label: "Gold Collector" },
+  { value: "Theme Hunter", label: "Theme Hunter" },
+  { value: "Night Owl", label: "Night Owl" },
+  { value: "Legend", label: "Legend" }
+]);
+export const PROFILE_ICONS = Object.freeze(["🌟", "🎮", "🦊", "🐱", "🐸", "🐼", "🐉", "🦄", "👾", "🎃", "⭐", "💎", "🌈", "🪩"]);
+const VALID_PROFILE_TITLES = new Set(PROFILE_TITLES.map(item => item.value));
+const VALID_PROFILE_ICONS = new Set(PROFILE_ICONS);
+const DEFAULT_PROFILE_ICON = "🌟";
+
 function asProfile(uid, data) {
   const profile = { uid, ...data };
-  if (!Number.isSafeInteger(profile.goldCoins)) {
-    profile.goldCoins = 0;
-  }
+  if (!Number.isSafeInteger(profile.goldCoins)) profile.goldCoins = 0;
   profile.tags = Array.isArray(profile.tags) ? profile.tags : [];
+  if (!VALID_PROFILE_TITLES.has(profile.profileTitle)) profile.profileTitle = "";
+  if (!VALID_PROFILE_ICONS.has(profile.profileIcon)) profile.profileIcon = DEFAULT_PROFILE_ICON;
   return profile;
 }
 
@@ -131,16 +148,35 @@ export async function getProfile(uid = auth.currentUser?.uid) {
     if (!snap.exists()) throw new Error("profile-create-failed");
   }
 
-  const data = snap.data() || {};
+  let data = snap.data() || {};
+  // Migrate older profiles one cosmetic field at a time. These are display-only
+  // metadata; they never grant tags, permissions or admin access.
+  const cosmeticDefaults = {};
+  if (!Object.prototype.hasOwnProperty.call(data, "profileTitle")) cosmeticDefaults.profileTitle = "";
+  if (!Object.prototype.hasOwnProperty.call(data, "profileIcon")) cosmeticDefaults.profileIcon = DEFAULT_PROFILE_ICON;
+  if (Object.keys(cosmeticDefaults).length) {
+    try {
+      await updateDoc(profileRef, {
+        ...cosmeticDefaults,
+        lastProfileChangeAt: serverTimestamp()
+      });
+      snap = await getDoc(profileRef);
+      data = snap.exists() ? snap.data() || {} : data;
+    } catch (error) {
+      console.warn("Profil-Design konnte noch nicht initialisiert werden:", error);
+    }
+  }
   if (!Object.prototype.hasOwnProperty.call(data, "goldCoins")) {
     // Existing profiles from before the currency field may initialize it to
-    // zero once. Rules disallow changing a balance once the field exists.
+    // zero once. Keep this as a separate write because the Rules treat it separately.
     try {
       await updateDoc(profileRef, { goldCoins: 0 });
+      snap = await getDoc(profileRef);
+      data = snap.exists() ? snap.data() || data : data;
     } catch (error) {
       console.warn("Goldmünzen-Feld konnte noch nicht initialisiert werden:", error);
+      data.goldCoins = 0;
     }
-    data.goldCoins = 0;
   }
 
   return asProfile(uid, data);
@@ -192,7 +228,9 @@ async function maybeGrantHalloweenThemeOnLogin(user, profile) {
 }
 
 export function onUser(callback) {
+  let authEvent = 0;
   return onAuthStateChanged(auth, async user => {
+    const eventId = ++authEvent;
     // Anonymous JDNEXT identities are not TobiServices accounts.
     if (!user || user.isAnonymous) {
       callback(null, null);
@@ -200,21 +238,37 @@ export function onUser(callback) {
     }
 
     const stillCurrent = () =>
-      auth.currentUser?.uid === user.uid && auth.currentUser.isAnonymous !== true;
+      eventId === authEvent &&
+      auth.currentUser?.uid === user.uid &&
+      auth.currentUser.isAnonymous !== true;
 
     try {
       let profile = await getProfile(user.uid);
-      // Profile reads may finish after a quick sign-out or account switch.
+      if (!stillCurrent()) return;
+
+      // Prefer a server-fresh profile but retain a usable cached profile if a
+      // transient network error occurs. This avoids "half logged-in" states.
+      try {
+        const serverProfile = await refreshProfileFromServer(user.uid);
+        if (serverProfile) profile = serverProfile;
+      } catch (error) {
+        console.warn("Server-Profil vorübergehend nicht erreichbar; Cache wird weiterverwendet.", error);
+      }
       if (!stillCurrent()) return;
 
       profile = await maybeGrantHalloweenThemeOnLogin(user, profile);
       if (!stillCurrent()) return;
 
       callback(user, profile);
+      if (profile && profile.disabled !== true) {
+        void syncPublicProfile(profile).catch(error =>
+          console.warn("Öffentlicher Profilabgleich konnte nicht abgeschlossen werden:", error)
+        );
+      }
     } catch (error) {
-      // A stale request must never overwrite the session of the new account.
       if (!stillCurrent()) return;
       console.error("Accountprofil konnte nicht geladen werden:", error);
+      // Keep the authenticated identity visible; consumers can retry the profile read.
       callback(user, null);
     }
   });
@@ -233,6 +287,65 @@ const USER_SELECTABLE_THEMES = new Set([
 
 // Change the equipped theme using the same authenticated Firebase session as the Account Center.
 // Admin Matrix is intentionally local-only and is guarded by the current admin tag in Untis Next.
+// Update only cosmetic fields. Neither field is consulted by isAdmin() or hasAccess().
+export async function updateCosmeticProfile({ profileTitle = "", profileIcon = DEFAULT_PROFILE_ICON } = {}) {
+  const title = String(profileTitle ?? "");
+  const icon = String(profileIcon ?? DEFAULT_PROFILE_ICON);
+  if (!VALID_PROFILE_TITLES.has(title)) throw new Error("Ungültiger Profil-Titel.");
+  if (!VALID_PROFILE_ICONS.has(icon)) throw new Error("Ungültiges Profil-Icon.");
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) throw new Error("Bitte melde dich zuerst an.");
+  const profile = await getProfile(user.uid);
+  if (!profile || profile.disabled === true) throw new Error("Dein Konto ist nicht verfügbar oder gesperrt.");
+  await updateDoc(doc(db, "users", user.uid), {
+    profileTitle: title,
+    profileIcon: icon,
+    lastProfileChangeAt: serverTimestamp()
+  });
+  const updated = await refreshProfileFromServer(user.uid);
+  if (updated) void syncPublicProfile(updated).catch(error =>
+    console.warn("Ranglisten-Profil konnte nicht aktualisiert werden:", error)
+  );
+  return updated || { ...profile, profileTitle: title, profileIcon: icon };
+}
+
+// Public mirror contains no email or tags. Rules require every mirrored score
+// and cosmetic value to match the private user's own profile, preventing fake coin totals.
+export async function syncPublicProfile(profileHint = null) {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return null;
+  let profile = null;
+  try {
+    profile = await refreshProfileFromServer(user.uid);
+  } catch (error) {
+    if (profileHint?.uid === user.uid) profile = profileHint;
+    else throw error;
+  }
+  if (!profile || profile.uid !== user.uid || profile.disabled === true) return null;
+  const title = VALID_PROFILE_TITLES.has(profile.profileTitle) ? profile.profileTitle : "";
+  const icon = VALID_PROFILE_ICONS.has(profile.profileIcon) ? profile.profileIcon : DEFAULT_PROFILE_ICON;
+  const displayName = String(profile.displayName || user.displayName || user.email?.split("@")[0] || "Spieler").trim().slice(0, 32) || "Spieler";
+  const goldCoins = Number.isSafeInteger(profile.goldCoins) ? profile.goldCoins : 0;
+  await setDoc(doc(db, "publicProfiles", user.uid), {
+    displayName,
+    profileTitle: title,
+    profileIcon: icon,
+    goldCoins,
+    updatedAt: serverTimestamp()
+  });
+  return { uid: user.uid, displayName, profileTitle: title, profileIcon: icon, goldCoins };
+}
+
+export async function getLeaderboard(maxEntries = 50) {
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(Number(maxEntries) || 50)));
+  const result = await getDocs(query(
+    collection(db, "publicProfiles"),
+    orderBy("goldCoins", "desc"),
+    limit(safeLimit)
+  ));
+  return result.docs.map(snap => ({ uid: snap.id, ...(snap.data() || {}) }));
+}
+
 export async function setEquippedTheme(themeId) {
   const id = String(themeId ?? "");
   if (!USER_SELECTABLE_THEMES.has(id)) throw new Error("Dieses Theme kann nicht ausgewählt werden.");
