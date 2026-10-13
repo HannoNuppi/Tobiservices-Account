@@ -45,7 +45,7 @@ Eine öffentliche, unangemeldete Funktion zum Vergeben von Admin-Rechten ist abs
 
 ## 4. `publicProfiles/{uid}`
 
-Öffentlich lesbare, bewusst reduzierte Kopie für die Vorschau-Rangliste. Erlaubte Felder sind `displayName`, `profileTitle`, `profileIcon`, `goldCoins` und `updatedAt`. E-Mail-Adressen, Tags und Berechtigungen gehören nicht in diese Collection. Die Firestore-Regeln erlauben einem angemeldeten Nutzer nur den eigenen Eintrag und prüfen, dass Titel, Icon und Goldmünzen mit dem privaten `users/{uid}`-Profil übereinstimmen. Die Profil-Titel sind rein kosmetisch und werden nirgendwo zur Rechteprüfung verwendet.
+Bewusst reduzierte Kopie für die Vorschau-Rangliste, die **nur aktive Admins lesen dürfen**. Erlaubte Felder sind `displayName`, `profileTitle`, `profileIcon`, `goldCoins` und `updatedAt`. E-Mail-Adressen, Tags und Berechtigungen gehören nicht in diese Collection. Die Firestore-Regeln erlauben einem angemeldeten Nutzer nur den eigenen Eintrag und prüfen, dass Titel, Icon und Goldmünzen mit dem privaten `users/{uid}`-Profil übereinstimmen. Die Profil-Titel sind rein kosmetisch und werden nirgendwo zur Rechteprüfung verwendet.
 
 ## 5. `siteSettings/jdnext`
 
