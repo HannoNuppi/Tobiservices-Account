@@ -50,7 +50,11 @@ const app = initializeApp(CONFIG.firebase);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-await setPersistence(auth, browserLocalPersistence);
+await setPersistence(auth, browserLocalPersistence).catch(error => {
+  // Do not abort the whole Account Core if a browser temporarily refuses a
+  // persistence change; auth state and profile reads should still initialize.
+  console.warn("Account-Persistenz konnte nicht aktualisiert werden:", error);
+});
 
 export const signOut = () => firebaseSignOut(auth);
 
