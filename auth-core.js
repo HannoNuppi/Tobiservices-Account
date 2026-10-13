@@ -67,10 +67,10 @@ export const PROFILE_TITLES = Object.freeze([
   { value: "Night Owl", label: "Night Owl" },
   { value: "Legend", label: "Legend" }
 ]);
-export const PROFILE_ICONS = Object.freeze(["🌟", "🎮", "🦊", "🐱", "🐸", "🐼", "🐉", "🦄", "👾", "🎃", "⭐", "💎", "🌈", "🪩"]);
+export const PROFILE_ICONS = Object.freeze(["", "🎮", "🦊", "🐱", "🐸", "🐼", "🐉", "🦄", "👾", "🎃", "⭐", "💎", "🌈", "🪩"]);
+export const DEFAULT_PROFILE_ICON = "";
 const VALID_PROFILE_TITLES = new Set(PROFILE_TITLES.map(item => item.value));
 const VALID_PROFILE_ICONS = new Set(PROFILE_ICONS);
-const DEFAULT_PROFILE_ICON = "🌟";
 
 function asProfile(uid, data) {
   const profile = { uid, ...data };
