@@ -272,6 +272,23 @@ export function onUser(callback) {
     } catch (error) {
       if (!stillCurrent()) return;
       console.error("Accountprofil konnte nicht geladen werden:", error);
+      // Retry with a server-only read before declaring the session half-recognized.
+      try {
+        const fallbackProfile = await refreshProfileFromServer(user.uid);
+        if (!stillCurrent()) return;
+        if (fallbackProfile) {
+          callback(user, fallbackProfile);
+          if (fallbackProfile.disabled !== true) {
+            void syncPublicProfile(fallbackProfile).catch(syncError =>
+              console.warn("Öffentlicher Profilabgleich fehlgeschlagen:", syncError)
+            );
+          }
+          return;
+        }
+      } catch (fallbackError) {
+        console.warn("Server-Profilabruf ist fehlgeschlagen:", fallbackError);
+      }
+      if (!stillCurrent()) return;
       // Keep the authenticated identity visible; consumers can retry the profile read.
       callback(user, null);
     }
@@ -306,11 +323,18 @@ export async function updateCosmeticProfile({ profileTitle = "", profileIcon = D
     profileIcon: icon,
     lastProfileChangeAt: serverTimestamp()
   });
-  const updated = await refreshProfileFromServer(user.uid);
-  if (updated) void syncPublicProfile(updated).catch(error =>
+  let updated = { ...profile, profileTitle: title, profileIcon: icon };
+  try {
+    updated = await refreshProfileFromServer(user.uid) || updated;
+  } catch (error) {
+    // The profile write already succeeded; do not report a false save failure
+    // merely because the follow-up server read is temporarily unavailable.
+    console.warn("Gespeichertes Profil konnte noch nicht serverseitig bestätigt werden:", error);
+  }
+  void syncPublicProfile(updated).catch(error =>
     console.warn("Ranglisten-Profil konnte nicht aktualisiert werden:", error)
   );
-  return updated || { ...profile, profileTitle: title, profileIcon: icon };
+  return updated;
 }
 
 // Public mirror contains no email or tags. Rules require every mirrored score
