@@ -22,6 +22,18 @@ service cloud.firestore {
     function userPath(uid) {
       return /databases/$(database)/documents/users/$(uid);
     }
+
+    function validProfileTitle(value) {
+      return value is string
+        && value in ['', 'Newcomer', 'Dance Fan', 'Gold Collector',
+          'Theme Hunter', 'Night Owl', 'Legend'];
+    }
+
+    function validProfileIcon(value) {
+      return value is string
+        && value in ['🌟', '🎮', '🦊', '🐱', '🐸', '🐼', '🐉', '🦄',
+          '👾', '🎃', '⭐', '💎', '🌈', '🪩'];
+    }
     function validAccessControl(data) {
       return data.keys().hasAll(['tags', 'permissions', 'updatedAt', 'updatedBy'])
         && data.keys().hasOnly(['tags', 'permissions', 'updatedAt', 'updatedBy'])
@@ -446,6 +458,15 @@ service cloud.firestore {
         && request.resource.data.authProvider == 'firebase-auth';
 
       allow update: if (
+        ownProfile(uid)
+        && isAccountUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'profileTitle', 'profileIcon', 'lastProfileChangeAt'
+        ])
+        && validProfileTitle(request.resource.data.profileTitle)
+        && validProfileIcon(request.resource.data.profileIcon)
+        && request.resource.data.lastProfileChangeAt == request.time
+      ) || (
         isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'tags', 'disabled', 'lastProfileChangeAt', 'email',
@@ -573,6 +594,33 @@ service cloud.firestore {
         && isValidJdnextPenalty(uid)
       );
 
+      allow delete: if false;
+    }
+
+    // Public leaderboard mirror: no email, UID field, tags or permissions.
+    // A user may only publish the score and cosmetics currently stored in their own profile.
+    match /publicProfiles/{uid} {
+      allow get, list: if true;
+      allow create, update: if ownProfile(uid)
+        && isAccountUser()
+        && exists(userPath(uid))
+        && get(userPath(uid)).data.disabled != true
+        && request.resource.data.keys().hasAll([
+          'displayName', 'profileTitle', 'profileIcon', 'goldCoins', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'displayName', 'profileTitle', 'profileIcon', 'goldCoins', 'updatedAt'
+        ])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 1
+        && request.resource.data.displayName.size() <= 32
+        && request.resource.data.profileTitle == get(userPath(uid)).data.profileTitle
+        && request.resource.data.profileIcon == get(userPath(uid)).data.profileIcon
+        && request.resource.data.goldCoins == get(userPath(uid)).data.goldCoins
+        && validProfileTitle(request.resource.data.profileTitle)
+        && validProfileIcon(request.resource.data.profileIcon)
+        && request.resource.data.goldCoins is int
+        && request.resource.data.updatedAt == request.time;
       allow delete: if false;
     }
 
