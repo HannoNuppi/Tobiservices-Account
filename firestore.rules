@@ -31,7 +31,7 @@ service cloud.firestore {
 
     function validProfileIcon(value) {
       return value is string
-        && value in ['🌟', '🎮', '🦊', '🐱', '🐸', '🐼', '🐉', '🦄',
+        && value in ['', '🎮', '🦊', '🐱', '🐸', '🐼', '🐉', '🦄',
           '👾', '🎃', '⭐', '💎', '🌈', '🪩'];
     }
     function validAccessControl(data) {
@@ -600,7 +600,8 @@ service cloud.firestore {
     // Public leaderboard mirror: no email, UID field, tags or permissions.
     // A user may only publish the score and cosmetics currently stored in their own profile.
     match /publicProfiles/{uid} {
-      allow get, list: if true;
+      // The leaderboard is an admin-only feature, including direct Firestore reads.
+      allow get, list: if isAdmin();
       allow create, update: if ownProfile(uid)
         && isAccountUser()
         && exists(userPath(uid))
