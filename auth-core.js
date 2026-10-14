@@ -328,16 +328,9 @@ export async function saveJdnextHomeworkEntry({ hwKey, entryId, text, author = "
     }
   }
 
-  let user = auth.currentUser;
-  if (!user) {
-    try {
-      user = (await signInAnonymously(auth)).user;
-    } catch (error) {
-      console.error("Untis-Next-Login für Hausaufgaben fehlgeschlagen:", error);
-      throw error;
-    }
-  }
-
+  // Wait for the existing modular session to settle before creating an anonymous
+  // identity. This prevents first-click posting from racing the account restore.
+  const user = await ensureJdnextFirebaseUser();
   const accountUser = !user.isAnonymous;
   let profile = null;
   if (accountUser) {
