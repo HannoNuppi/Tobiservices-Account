@@ -24,6 +24,8 @@ import {
   updateDoc,
   runTransaction,
   serverTimestamp,
+  increment,
+  writeBatch,
   collection,
   getDocs,
   query,
@@ -417,9 +419,110 @@ export async function saveJdnextHomeworkEntry({ hwKey, entryId, text, author = "
   return { ok: true, rewardQueued: rewardApplied, uid: user.uid, isAnonymous: user.isAnonymous };
 }
 
-export const hasTag = (profile, tag) =>
-  Array.isArray(profile?.tags) &&
-  profile.tags.includes(String(tag).toLowerCase());
+
+// Obtain the active Account Center identity first; use anonymous auth only when
+// there truly is no persisted account. This avoids Compat SDK sessions replacing
+// a logged-in TobiServices account during homework/report actions.
+async function ensureJdnextFirebaseUser() {
+  if (auth.currentUser) return auth.currentUser;
+  const existingUser = await new Promise(resolve => {
+    let unsubscribe = () => {};
+    unsubscribe = onAuthStateChanged(auth, user => {
+      unsubscribe();
+      resolve(user || null);
+    });
+  });
+  if (existingUser) return existingUser;
+  try {
+    return (await signInAnonymously(auth)).user;
+  } catch (error) {
+    console.error("Anonyme Firebase-Anmeldung für Untis Next fehlgeschlagen:", error);
+    throw error;
+  }
+}
+
+async function removeJdnextHomeworkAfterReports(hwKey, entryId) {
+  const entryRef = doc(db, "jdnextHomework", hwKey, "entries", entryId);
+  const ownerRef = doc(db, "jdnextHomeworkPrivate", hwKey, "entries", entryId);
+  const entrySnap = await getDoc(entryRef);
+  if (!entrySnap.exists() || Number(entrySnap.data()?.reportCount || 0) < 2) return false;
+  const ownerSnap = await getDoc(ownerRef);
+  if (!ownerSnap.exists()) throw new Error("Private Autorzuordnung fehlt; der Eintrag bleibt bestehen.");
+
+  const owner = ownerSnap.data() || {};
+  const authorUid = typeof owner.authorTobiUid === "string" ? owner.authorTobiUid : "";
+  const images = Array.isArray(entrySnap.data()?.images) ? entrySnap.data().images : [];
+  const makeBatch = tryDisable => {
+    const batch = writeBatch(db);
+    if (authorUid) {
+      const eventId = "penalty-" + hwKey + "-" + entryId;
+      batch.set(doc(db, "jdnextCoinEvents", eventId), {
+        uid: authorUid, amount: -20, type: "homework-removal", hwKey, entryId,
+        createdAt: serverTimestamp()
+      });
+      batch.update(doc(db, "users", authorUid), {
+        goldCoins: increment(-20),
+        lastProfileChangeAt: serverTimestamp(),
+        lastJdnextCoinEventId: eventId,
+        ...(tryDisable ? { disabled: true } : {})
+      });
+    }
+    batch.delete(entryRef);
+    batch.delete(ownerRef);
+    images.forEach(image => {
+      if (image?.kind === "firestore" && typeof image.imageId === "string") {
+        batch.delete(doc(db, "jdnextHomework", hwKey, "entries", entryId, "images", image.imageId));
+      }
+    });
+    return batch;
+  };
+
+  if (authorUid) {
+    // Try the atomic moderation threshold update first; if the rules reject the
+    // disabled flag because the threshold was not reached, retry without that flag.
+    try {
+      await makeBatch(true).commit();
+      return true;
+    } catch (firstError) {
+      await makeBatch(false).commit();
+      return true;
+    }
+  }
+  await makeBatch(false).commit();
+  return true;
+}
+
+export async function reportJdnextHomeworkEntry(hwKey, entryId) {
+  const key = String(hwKey ?? "");
+  const id = String(entryId ?? "");
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{1,2}$/.test(key) || !id || id.includes("/")) {
+    throw new Error("Ungültiger Hausaufgabeneintrag.");
+  }
+  const user = await ensureJdnextFirebaseUser();
+  const entryRef = doc(db, "jdnextHomework", key, "entries", id);
+  const reportRef = doc(db, "jdnextHomework", key, "entries", id, "reports", user.uid);
+  const nextCount = await runTransaction(db, async transaction => {
+    const entrySnapshot = await transaction.get(entryRef);
+    const reportSnapshot = await transaction.get(reportRef);
+    if (!entrySnapshot.exists()) throw new Error("Der Eintrag wurde bereits entfernt.");
+    if (reportSnapshot.exists()) throw new Error("already-reported");
+    const current = Number.isSafeInteger(entrySnapshot.data()?.reportCount)
+      ? entrySnapshot.data().reportCount : 0;
+    transaction.set(reportRef, { createdAt: serverTimestamp() });
+    transaction.update(entryRef, { reportCount: current + 1 });
+    return current + 1;
+  });
+
+  let removed = false;
+  if (nextCount >= 2) removed = await removeJdnextHomeworkAfterReports(key, id);
+  return { nextCount, removed, uid: user.uid };
+}
+
+export const hasTag = (profile, tag) => {
+  const expected = String(tag ?? "").trim().toLowerCase();
+  return Array.isArray(profile?.tags)
+    && profile.tags.some(value => String(value ?? "").trim().toLowerCase() === expected);
+};
 
 export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, "admin");
 
@@ -580,7 +683,7 @@ export async function saveAccessControl(accessControl) {
   if (!currentUser) throw new Error("Bitte melde dich erneut an.");
   const adminSnap = await getDoc(doc(db, "users", currentUser.uid));
   const adminProfile = adminSnap.exists() ? adminSnap.data() || {} : {};
-  if (adminProfile.disabled === true || !Array.isArray(adminProfile.tags) || !adminProfile.tags.includes("admin")) {
+  if (adminProfile.disabled === true || !hasTag(adminProfile, "admin")) {
     throw new Error("Nur aktive Admins dürfen Tag- und Zugriffsregeln ändern.");
   }
 
