@@ -239,8 +239,13 @@ export function onUser(callback) {
   let authEvent = 0;
   return onAuthStateChanged(auth, async user => {
     const eventId = ++authEvent;
-    // Anonymous JDNEXT identities are not TobiServices accounts.
+    // Allow persisted auth to finish restoring before emitting "signed out".
+    // A fast null/anonymous callback must not erase a just-restored account.
     if (!user || user.isAnonymous) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      if (eventId !== authEvent) return;
+      const latestUser = auth.currentUser;
+      if (latestUser && !latestUser.isAnonymous) return;
       callback(null, null);
       return;
     }
