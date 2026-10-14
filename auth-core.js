@@ -546,6 +546,79 @@ const USER_SELECTABLE_THEMES = new Set([
   "RoyalRebels", "Bronze", "Silver", "Gold", "WinterEvent", "BirthdayEvent", "HalloweenEvent"
 ]);
 
+const JDnextThemePrices = Object.freeze({
+  Ocean: 10, Sunset: 10, Forest: 10, Candy: 10, Midnight: 10, Aurora: 10, Retro: 10,
+  RoyalRebels: 50, Bronze: 50, Silver: 70, Gold: 100
+});
+
+export async function purchaseJdnextTheme(themeId) {
+  const id = String(themeId ?? "");
+  const price = JDnextThemePrices[id];
+  if (!Number.isSafeInteger(price) || price <= 0) throw new Error("Dieses Theme ist nicht käuflich.");
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) throw new Error("Melde dich mit deinem TobiServices-Konto an, um Themes zu kaufen.");
+  const profile = await getProfile(user.uid);
+  if (!profile || profile.disabled === true) throw new Error("Dein TobiServices-Konto ist gesperrt oder nicht verfügbar.");
+
+  const profileRef = doc(db, "users", user.uid);
+  const eventId = "theme-" + user.uid + "-" + id;
+  const eventRef = doc(db, "jdnextCoinEvents", eventId);
+  const result = await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(profileRef);
+    if (!snapshot.exists()) throw new Error("Dein TobiServices-Profil wurde nicht gefunden.");
+    const latest = snapshot.data() || {};
+    if (latest.disabled === true) throw new Error("Dein TobiServices-Konto ist gesperrt.");
+    const coins = Number.isSafeInteger(latest.goldCoins) ? latest.goldCoins : 0;
+    const owned = Array.isArray(latest.ownedThemes) ? latest.ownedThemes : [];
+    if (owned.includes(id)) return { alreadyOwned: true, coins, owned };
+    if (coins < price) throw new Error("Du brauchst mindestens " + price + " Goldmünzen für dieses Theme.");
+    if (owned.length >= 30) throw new Error("Für dieses Konto sind bereits zu viele Themes gespeichert.");
+    const nextOwned = [...owned, id];
+    transaction.update(profileRef, {
+      goldCoins: coins - price,
+      ownedThemes: nextOwned,
+      lastProfileChangeAt: serverTimestamp(),
+      lastJdnextCoinEventId: eventId
+    });
+    transaction.set(eventRef, {
+      uid: user.uid,
+      amount: -price,
+      type: "theme-purchase",
+      themeId: id,
+      createdAt: serverTimestamp()
+    });
+    return { alreadyOwned: false, coins: coins - price, owned: nextOwned };
+  });
+  const updated = { ...profile, goldCoins: result.coins, ownedThemes: result.owned };
+  void syncPublicProfile(updated).catch(error =>
+    console.warn("Ranglisten-Profil konnte nach dem Theme-Kauf nicht aktualisiert werden:", error)
+  );
+  return { ...updated, alreadyOwned: result.alreadyOwned };
+}
+
+export async function setMaintenanceBypass(enabled) {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) throw new Error("Bitte melde dich erneut im TobiServices Account an.");
+  const profile = await getProfile(user.uid);
+  if (!profile || profile.disabled === true || !hasTag(profile, "admin")) {
+    throw new Error("Nur aktive Admins dürfen den Wartungsbypass ändern.");
+  }
+  const value = enabled === true;
+  await updateDoc(doc(db, "users", user.uid), {
+    maintenanceBypass: value,
+    lastProfileChangeAt: serverTimestamp()
+  });
+  return { ...profile, maintenanceBypass: value };
+}
+
+export async function checkHalloweenThemeUnlock() {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return null;
+  const profile = await getProfile(user.uid);
+  if (!profile || profile.disabled === true) return profile;
+  return await maybeGrantHalloweenThemeOnLogin(user, profile);
+}
+
 // Change the equipped theme using the same authenticated Firebase session as the Account Center.
 // Admin Matrix is intentionally local-only and is guarded by the current admin tag in Untis Next.
 // Update only cosmetic fields. Neither field is consulted by isAdmin() or hasAccess().
