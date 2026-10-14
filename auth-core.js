@@ -376,6 +376,201 @@ export async function purchaseJdnextTheme(themeId) {
   return { ...updated, alreadyOwned: result.alreadyOwned };
 }
 
+function cleanJdnextSegment(value, label) {
+  const result = String(value ?? "").trim();
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(result)) {
+    throw new Error("Ungültiger " + label + ".");
+  }
+  return result;
+}
+
+async function ensureJdnextAuthUser() {
+  let user = auth.currentUser;
+  if (!user) user = (await signInAnonymously(auth)).user;
+  if (!user) throw new Error("Firebase konnte keine Sitzung herstellen.");
+  return user;
+}
+
+async function removeReportedJdnextHomework(hwKey, entryId) {
+  const entryRef = doc(db, "jdnextHomework", hwKey, "entries", entryId);
+  const ownerRef = doc(db, "jdnextHomeworkPrivate", hwKey, "entries", entryId);
+  const entrySnap = await getDoc(entryRef);
+  if (!entrySnap.exists()) return true;
+  const entry = entrySnap.data() || {};
+  if (!Number.isSafeInteger(entry.reportCount) || entry.reportCount < 2) return false;
+
+  const ownerSnap = await getDoc(ownerRef);
+  if (!ownerSnap.exists()) throw new Error("Private Autorzuordnung fehlt; Eintrag bleibt bestehen.");
+  const owner = ownerSnap.data() || {};
+  const authorUid = typeof owner.authorTobiUid === "string" ? owner.authorTobiUid : "";
+
+  const commitRemoval = async (tryDisable) => {
+    const batch = writeBatch(db);
+    if (authorUid) {
+      const profileRef = doc(db, "users", authorUid);
+      const eventId = "penalty-" + hwKey + "-" + entryId;
+      batch.set(doc(db, "jdnextCoinEvents", eventId), {
+        uid: authorUid,
+        amount: -20,
+        type: "homework-removal",
+        hwKey,
+        entryId,
+        createdAt: serverTimestamp()
+      });
+      const profileUpdate = {
+        goldCoins: increment(-20),
+        lastProfileChangeAt: serverTimestamp(),
+        lastJdnextCoinEventId: eventId
+      };
+      if (tryDisable) profileUpdate.disabled = true;
+      batch.update(profileRef, profileUpdate);
+    }
+    batch.delete(entryRef);
+    batch.delete(ownerRef);
+    (Array.isArray(entry.images) ? entry.images : []).forEach(image => {
+      if (image?.kind === "firestore" && typeof image.imageId === "string") {
+        batch.delete(doc(db, "jdnextHomework", hwKey, "entries", entryId, "images", image.imageId));
+      }
+    });
+    await batch.commit();
+  };
+
+  if (authorUid) {
+    try {
+      await commitRemoval(true);
+      return true;
+    } catch (firstError) {
+      try {
+        await commitRemoval(false);
+        return true;
+      } catch (secondError) {
+        console.error("Gemeldeter Hausaufgabeneintrag konnte noch nicht entfernt werden:", secondError || firstError);
+        throw secondError;
+      }
+    }
+  }
+  await commitRemoval(false);
+  return true;
+}
+
+export async function saveJdnextHomeworkEntry({ hwKey, entryId, text, author = "", images = [] } = {}) {
+  const key = cleanJdnextSegment(hwKey, "Stundenplan-Schlüssel");
+  const id = cleanJdnextSegment(entryId, "Eintrags-ID");
+  const homeworkText = String(text ?? "").trim();
+  const displayAuthor = String(author ?? "").trim();
+  if (homeworkText.length < 3 || homeworkText.length > 1000) {
+    throw new Error("Die Hausaufgabe muss zwischen 3 und 1000 Zeichen lang sein.");
+  }
+  if (displayAuthor.length > 80) throw new Error("Der Name darf höchstens 80 Zeichen lang sein.");
+
+  const preparedImages = (Array.isArray(images) ? images : []).slice(0, 3).map((image, index) => {
+    const imageId = String(image?.imageId ?? ("img" + index));
+    const filename = String(image?.filename || ("bild-" + (index + 1) + ".jpg")).slice(0, 120);
+    const dataUrl = String(image?.dataUrl ?? "");
+    if (!/^img[0-2]$/.test(imageId)) throw new Error("Ungültige Bild-ID.");
+    if (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(dataUrl) || dataUrl.length > 800000) {
+      throw new Error("Ein Bild ist ungültig oder zu groß. Bitte verwende JPEG-Bilder unter 800 KB.");
+    }
+    return { imageId, filename, dataUrl };
+  });
+  if (new Set(preparedImages.map(image => image.imageId)).size !== preparedImages.length) {
+    throw new Error("Bild-IDs müssen eindeutig sein.");
+  }
+
+  const user = await ensureJdnextAuthUser();
+  let rewardQueued = false;
+  if (!user.isAnonymous) {
+    await getProfile(user.uid);
+    const profileSnap = await getDocFromServer(doc(db, "users", user.uid));
+    const profile = profileSnap.exists() ? profileSnap.data() || {} : null;
+    rewardQueued = Boolean(profile
+      && profile.disabled !== true
+      && Number.isSafeInteger(profile.goldCoins)
+      && profile.goldCoins > -50);
+  }
+  if (auth.currentUser?.uid !== user.uid) {
+    throw new Error("Die Anmeldung hat während des Speicherns gewechselt. Bitte erneut versuchen.");
+  }
+
+  const entryRef = doc(db, "jdnextHomework", key, "entries", id);
+  const ownerRef = doc(db, "jdnextHomeworkPrivate", key, "entries", id);
+  const batch = writeBatch(db);
+  const imageMetadata = preparedImages.map(image => ({
+    kind: "firestore",
+    imageId: image.imageId,
+    filename: image.filename
+  }));
+
+  preparedImages.forEach(image => {
+    batch.set(doc(db, "jdnextHomework", key, "entries", id, "images", image.imageId), {
+      filename: image.filename,
+      dataUrl: image.dataUrl,
+      createdAt: serverTimestamp()
+    });
+  });
+  batch.set(entryRef, {
+    text: homeworkText,
+    author: displayAuthor,
+    images: imageMetadata,
+    reportCount: 0,
+    createdAt: serverTimestamp()
+  });
+  batch.set(ownerRef, {
+    authorAuthUid: user.uid,
+    authorTobiUid: rewardQueued ? user.uid : null,
+    authorTobiAccountUid: user.isAnonymous ? null : user.uid,
+    createdAt: serverTimestamp()
+  });
+
+  if (rewardQueued) {
+    const eventId = "reward-" + key + "-" + id;
+    batch.update(doc(db, "users", user.uid), {
+      goldCoins: increment(10),
+      lastProfileChangeAt: serverTimestamp(),
+      lastJdnextCoinEventId: eventId
+    });
+    batch.set(doc(db, "jdnextCoinEvents", eventId), {
+      uid: user.uid,
+      amount: 10,
+      type: "homework-post",
+      hwKey: key,
+      entryId: id,
+      createdAt: serverTimestamp()
+    });
+  }
+
+  await batch.commit();
+  return { ok: true, rewardQueued, images: imageMetadata };
+}
+
+export async function reportJdnextHomeworkEntry(hwKey, entryId) {
+  const key = cleanJdnextSegment(hwKey, "Stundenplan-Schlüssel");
+  const id = cleanJdnextSegment(entryId, "Eintrags-ID");
+  const user = await ensureJdnextAuthUser();
+  const entryRef = doc(db, "jdnextHomework", key, "entries", id);
+  const reporterRef = doc(entryRef, "reports", user.uid);
+
+  const nextCount = await runTransaction(db, async transaction => {
+    const entrySnap = await transaction.get(entryRef);
+    if (!entrySnap.exists()) throw new Error("homework-not-found");
+    const entry = entrySnap.data() || {};
+    const currentCount = Number.isSafeInteger(entry.reportCount) ? entry.reportCount : 0;
+    const next = currentCount + 1;
+    transaction.update(entryRef, { reportCount: next });
+    transaction.set(reporterRef, { createdAt: serverTimestamp() });
+    return next;
+  });
+
+  if (nextCount < 2) return { nextCount, removed: false, removalPending: false };
+  try {
+    const removed = await removeReportedJdnextHomework(key, id);
+    return { nextCount, removed, removalPending: !removed };
+  } catch (error) {
+    console.warn("Die zweite Meldung wurde gespeichert, aber die Entfernung steht noch aus:", error);
+    return { nextCount, removed: false, removalPending: true };
+  }
+}
+
 export async function setMaintenanceBypass(enabled) {
   const user = auth.currentUser;
   if (!user || user.isAnonymous) throw new Error("Bitte melde dich erneut im TobiServices Account an.");
