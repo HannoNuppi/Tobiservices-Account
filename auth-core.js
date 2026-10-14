@@ -239,14 +239,19 @@ export function onUser(callback) {
   let authEvent = 0;
   return onAuthStateChanged(auth, async user => {
     const eventId = ++authEvent;
-    // Allow persisted auth to finish restoring before emitting "signed out".
-    // A fast null/anonymous callback must not erase a just-restored account.
+
+    // A transient null/anonymous callback during browser session restoration must
+    // not redirect a valid user away from the Account Center.
     if (!user || user.isAnonymous) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 700));
       if (eventId !== authEvent) return;
       const latestUser = auth.currentUser;
       if (latestUser && !latestUser.isAnonymous) return;
-      callback(null, null);
+      try {
+        callback(null, null, null);
+      } catch (uiError) {
+        console.error("Account-Oberfläche konnte den Abmeldestatus nicht anzeigen:", uiError);
+      }
       return;
     }
 
@@ -255,275 +260,57 @@ export function onUser(callback) {
       auth.currentUser?.uid === user.uid &&
       auth.currentUser.isAnonymous !== true;
 
+    let profile = null;
+    let profileError = null;
     try {
-      let profile = await getProfile(user.uid);
+      profile = await getProfile(user.uid);
       if (!stillCurrent()) return;
 
-      // Prefer a server-fresh profile but retain a usable cached profile if a
-      // transient network error occurs. This avoids "half logged-in" states.
       try {
         const serverProfile = await refreshProfileFromServer(user.uid);
         if (serverProfile) profile = serverProfile;
       } catch (error) {
-        console.warn("Server-Profil vorübergehend nicht erreichbar; Cache wird weiterverwendet.", error);
+        console.warn("Server-Profil vorübergehend nicht erreichbar; nutze den geladenen Profilstand.", error);
       }
       if (!stillCurrent()) return;
 
       profile = await maybeGrantHalloweenThemeOnLogin(user, profile);
-      if (!stillCurrent()) return;
-
-      callback(user, profile);
-      if (profile && profile.disabled !== true) {
-        void syncPublicProfile(profile).catch(error =>
-          console.warn("Öffentlicher Profilabgleich konnte nicht abgeschlossen werden:", error)
-        );
-      }
     } catch (error) {
       if (!stillCurrent()) return;
+      profileError = error;
       console.error("Accountprofil konnte nicht geladen werden:", error);
-      // Retry with a server-only read before declaring the session half-recognized.
       try {
         const fallbackProfile = await refreshProfileFromServer(user.uid);
         if (!stillCurrent()) return;
         if (fallbackProfile) {
-          callback(user, fallbackProfile);
-          if (fallbackProfile.disabled !== true) {
-            void syncPublicProfile(fallbackProfile).catch(syncError =>
-              console.warn("Öffentlicher Profilabgleich fehlgeschlagen:", syncError)
-            );
-          }
-          return;
+          profile = fallbackProfile;
+          profileError = null;
         }
       } catch (fallbackError) {
-        console.warn("Server-Profilabruf ist fehlgeschlagen:", fallbackError);
-      }
-      if (!stillCurrent()) return;
-      // Keep the authenticated identity visible; consumers can retry the profile read.
-      callback(user, null);
-    }
-  });
-}
-
-// Single-auth implementation for new Untis Next posts. It uses the same
-// modular Firebase Auth/Firestore instances as the Account Center, instead of
-// creating a competing anonymous session through the legacy Compat SDK.
-export async function saveJdnextHomeworkEntry({ hwKey, entryId, text, author = "", images = [] } = {}) {
-  const key = String(hwKey ?? "");
-  const id = String(entryId ?? "");
-  const cleanText = String(text ?? "").trim();
-  const cleanAuthor = String(author ?? "").trim();
-  const inputImages = Array.isArray(images) ? images.slice(0, 3) : [];
-
-  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{1,2}$/.test(key)) throw new Error("Ungültiger Stundenplan-Schlüssel.");
-  if (!id || id.length > 140 || id.includes("/")) throw new Error("Ungültige Hausaufgaben-ID.");
-  if (cleanText.length < 3 || cleanText.length > 1000) throw new Error("Die Hausaufgabe muss 3–1000 Zeichen lang sein.");
-  if (cleanAuthor.length > 80) throw new Error("Der Name ist zu lang (max. 80 Zeichen).");
-  for (const image of inputImages) {
-    if (!/^img[0-2]$/.test(String(image?.imageId ?? ""))) throw new Error("Ungültige Bild-ID.");
-    if (typeof image?.filename !== "string" || image.filename.length > 120) throw new Error("Der Bildname ist zu lang.");
-    if (typeof image?.dataUrl !== "string" ||
-        image.dataUrl.length > 800000 ||
-        !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image.dataUrl)) {
-      throw new Error("Ein Bild ist ungültig oder überschreitet die erlaubte Uploadgröße.");
-    }
-  }
-
-  // Wait for the existing modular session to settle before creating an anonymous
-  // identity. This prevents first-click posting from racing the account restore.
-  const user = await ensureJdnextFirebaseUser();
-  const accountUser = !user.isAnonymous;
-  let profile = null;
-  if (accountUser) {
-    profile = await getProfile(user.uid);
-    if (!profile) throw new Error("Das TobiServices-Profil konnte nicht geladen werden.");
-  }
-
-  const entryRef = doc(db, "jdnextHomework", key, "entries", id);
-  const ownerRef = doc(db, "jdnextHomeworkPrivate", key, "entries", id);
-  const eventId = "reward-" + key + "-" + id;
-  const eventRef = doc(db, "jdnextCoinEvents", eventId);
-  const profileRef = accountUser ? doc(db, "users", user.uid) : null;
-  const imageMetadata = inputImages.map(image => ({
-    kind: "firestore",
-    imageId: String(image.imageId),
-    filename: String(image.filename || "bild.jpg").slice(0, 120)
-  }));
-  let rewardApplied = false;
-
-  await runTransaction(db, async transaction => {
-    const entrySnapshot = await transaction.get(entryRef);
-    if (entrySnapshot.exists()) throw new Error("Dieser Hausaufgabeneintrag existiert bereits.");
-
-    // All transaction reads happen before the first write.
-    const profileSnapshot = profileRef ? await transaction.get(profileRef) : null;
-    let authorTobiUid = null;
-    let coinBalance = null;
-    let profileData = null;
-
-    if (profileSnapshot?.exists) {
-      profileData = profileSnapshot.data() || {};
-      coinBalance = Number.isSafeInteger(profileData.goldCoins) ? profileData.goldCoins : null;
-      if (profileData.disabled !== true && coinBalance !== null && coinBalance > -50) {
-        authorTobiUid = user.uid;
+        console.warn("Erneuter Server-Profilabruf fehlgeschlagen:", fallbackError);
+        if (!profileError) profileError = fallbackError;
       }
     }
 
-    if (authorTobiUid) {
-      const nextCoins = coinBalance + 10;
-      if (!Number.isSafeInteger(nextCoins)) throw new Error("Der Münzstand ist außerhalb des erlaubten Zahlenbereichs.");
-      transaction.update(profileRef, {
-        goldCoins: nextCoins,
-        lastProfileChangeAt: serverTimestamp(),
-        lastJdnextCoinEventId: eventId
-      });
-      transaction.set(eventRef, {
-        uid: user.uid,
-        amount: 10,
-        type: "homework-post",
-        hwKey: key,
-        entryId: id,
-        createdAt: serverTimestamp()
-      });
-      rewardApplied = true;
-    }
+    if (!stillCurrent()) return;
 
-    transaction.set(entryRef, {
-      text: cleanText,
-      author: cleanAuthor,
-      images: imageMetadata,
-      reportCount: 0,
-      createdAt: serverTimestamp()
-    });
-    transaction.set(ownerRef, {
-      authorAuthUid: user.uid,
-      authorTobiUid,
-      authorTobiAccountUid: accountUser ? user.uid : null,
-      createdAt: serverTimestamp()
-    });
-
-    inputImages.forEach(image => {
-      transaction.set(doc(db, "jdnextHomework", key, "entries", id, "images", String(image.imageId)), {
-        filename: String(image.filename || "bild.jpg").slice(0, 120),
-        dataUrl: image.dataUrl,
-        createdAt: serverTimestamp()
-      });
-    });
-  });
-
-  if (rewardApplied && accountUser) {
-    void syncPublicProfile({ ...profile, goldCoins: (Number.isSafeInteger(profile?.goldCoins) ? profile.goldCoins : 0) + 10 })
-      .catch(error => console.warn("Ranglisten-Profil wird später aktualisiert:", error));
-  }
-  return { ok: true, rewardQueued: rewardApplied, uid: user.uid, isAnonymous: user.isAnonymous };
-}
-
-
-// Obtain the active Account Center identity first; use anonymous auth only when
-// there truly is no persisted account. This avoids Compat SDK sessions replacing
-// a logged-in TobiServices account during homework/report actions.
-async function ensureJdnextFirebaseUser() {
-  if (auth.currentUser) return auth.currentUser;
-  const existingUser = await new Promise(resolve => {
-    let unsubscribe = () => {};
-    unsubscribe = onAuthStateChanged(auth, user => {
-      unsubscribe();
-      resolve(user || null);
-    });
-  });
-  if (existingUser) return existingUser;
-  try {
-    return (await signInAnonymously(auth)).user;
-  } catch (error) {
-    console.error("Anonyme Firebase-Anmeldung für Untis Next fehlgeschlagen:", error);
-    throw error;
-  }
-}
-
-async function removeJdnextHomeworkAfterReports(hwKey, entryId) {
-  const entryRef = doc(db, "jdnextHomework", hwKey, "entries", entryId);
-  const ownerRef = doc(db, "jdnextHomeworkPrivate", hwKey, "entries", entryId);
-  const entrySnap = await getDoc(entryRef);
-  if (!entrySnap.exists() || Number(entrySnap.data()?.reportCount || 0) < 2) return false;
-  const ownerSnap = await getDoc(ownerRef);
-  if (!ownerSnap.exists()) throw new Error("Private Autorzuordnung fehlt; der Eintrag bleibt bestehen.");
-
-  const owner = ownerSnap.data() || {};
-  const authorUid = typeof owner.authorTobiUid === "string" ? owner.authorTobiUid : "";
-  const images = Array.isArray(entrySnap.data()?.images) ? entrySnap.data().images : [];
-  const makeBatch = tryDisable => {
-    const batch = writeBatch(db);
-    if (authorUid) {
-      const eventId = "penalty-" + hwKey + "-" + entryId;
-      batch.set(doc(db, "jdnextCoinEvents", eventId), {
-        uid: authorUid, amount: -20, type: "homework-removal", hwKey, entryId,
-        createdAt: serverTimestamp()
-      });
-      batch.update(doc(db, "users", authorUid), {
-        goldCoins: increment(-20),
-        lastProfileChangeAt: serverTimestamp(),
-        lastJdnextCoinEventId: eventId,
-        ...(tryDisable ? { disabled: true } : {})
-      });
-    }
-    batch.delete(entryRef);
-    batch.delete(ownerRef);
-    images.forEach(image => {
-      if (image?.kind === "firestore" && typeof image.imageId === "string") {
-        batch.delete(doc(db, "jdnextHomework", hwKey, "entries", entryId, "images", image.imageId));
-      }
-    });
-    return batch;
-  };
-
-  if (authorUid) {
-    // Try the atomic moderation threshold update first; if the rules reject the
-    // disabled flag because the threshold was not reached, retry without that flag.
+    // Keep rendering exceptions separate from Firebase/profile failures; previously
+    // an HTML callback error was caught as an auth error and invoked the callback twice.
     try {
-      await makeBatch(true).commit();
-      return true;
-    } catch (firstError) {
-      await makeBatch(false).commit();
-      return true;
+      callback(user, profile, profileError);
+    } catch (uiError) {
+      console.error("Die Account-Oberfläche hat einen Darstellungsfehler:", uiError);
+      window.dispatchEvent(new CustomEvent("tobiservices-account-ui-error", {
+        detail: { message: String(uiError?.message || uiError) }
+      }));
     }
-  }
-  await makeBatch(false).commit();
-  return true;
-}
 
-export async function reportJdnextHomeworkEntry(hwKey, entryId) {
-  const key = String(hwKey ?? "");
-  const id = String(entryId ?? "");
-  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{1,2}$/.test(key) || !id || id.includes("/")) {
-    throw new Error("Ungültiger Hausaufgabeneintrag.");
-  }
-  const user = await ensureJdnextFirebaseUser();
-  const entryRef = doc(db, "jdnextHomework", key, "entries", id);
-  const reportRef = doc(db, "jdnextHomework", key, "entries", id, "reports", user.uid);
-  const nextCount = await runTransaction(db, async transaction => {
-    const entrySnapshot = await transaction.get(entryRef);
-    const reportSnapshot = await transaction.get(reportRef);
-    if (!entrySnapshot.exists()) throw new Error("Der Eintrag wurde bereits entfernt.");
-    if (reportSnapshot.exists()) throw new Error("already-reported");
-    const current = Number.isSafeInteger(entrySnapshot.data()?.reportCount)
-      ? entrySnapshot.data().reportCount : 0;
-    transaction.set(reportRef, { createdAt: serverTimestamp() });
-    transaction.update(entryRef, { reportCount: current + 1 });
-    return current + 1;
+    if (profile && profile.disabled !== true) {
+      void syncPublicProfile(profile).catch(error =>
+        console.warn("Öffentlicher Profilabgleich konnte nicht abgeschlossen werden:", error)
+      );
+    }
   });
-
-  let removed = false;
-  let removalPending = false;
-  if (nextCount >= 2) {
-    try {
-      removed = await removeJdnextHomeworkAfterReports(key, id);
-      removalPending = !removed;
-    } catch (error) {
-      // The report itself is already committed. Keep that distinction clear to the UI.
-      removalPending = true;
-      console.error("Hausaufgabe wurde gemeldet, aber die Entfernung schlug fehl:", error);
-    }
-  }
-  return { nextCount, removed, removalPending, uid: user.uid };
 }
 
 export const hasTag = (profile, tag) => {
