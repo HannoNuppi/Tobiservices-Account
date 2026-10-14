@@ -773,24 +773,6 @@ export async function setGoldCoins(uid, amount) {
   return { ok: true, uid: targetUid, goldCoins: balance };
 }
 
-export async function setMaintenanceBypass(enabled) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error("Bitte melde dich erneut an.");
-
-  const profileRef = doc(db, "users", uid);
-  const snap = await getDoc(profileRef);
-  const data = snap.exists() ? snap.data() || {} : {};
-  if (!Array.isArray(data.tags) || !data.tags.includes("admin")) {
-    throw new Error("Der Wartungsbypass ist nur für Admins verfügbar.");
-  }
-
-  await updateDoc(profileRef, {
-    maintenanceBypass: Boolean(enabled),
-    lastProfileChangeAt: serverTimestamp()
-  });
-  return Boolean(enabled);
-}
-
 export async function setDisabled(uid, disabled) {
   const targetUid = String(uid ?? "");
   if (!targetUid) throw new Error("uid-required");
