@@ -10,6 +10,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   signInWithEmailAndPassword,
+  signInAnonymously,
   createUserWithEmailAndPassword,
   updateProfile,
   signOut as firebaseSignOut
@@ -294,6 +295,126 @@ export function onUser(callback) {
       callback(user, null);
     }
   });
+}
+
+// Single-auth implementation for new Untis Next posts. It uses the same
+// modular Firebase Auth/Firestore instances as the Account Center, instead of
+// creating a competing anonymous session through the legacy Compat SDK.
+export async function saveJdnextHomeworkEntry({ hwKey, entryId, text, author = "", images = [] } = {}) {
+  const key = String(hwKey ?? "");
+  const id = String(entryId ?? "");
+  const cleanText = String(text ?? "").trim();
+  const cleanAuthor = String(author ?? "").trim();
+  const inputImages = Array.isArray(images) ? images.slice(0, 3) : [];
+
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{1,2}$/.test(key)) throw new Error("Ungültiger Stundenplan-Schlüssel.");
+  if (!id || id.length > 140 || id.includes("/")) throw new Error("Ungültige Hausaufgaben-ID.");
+  if (cleanText.length < 3 || cleanText.length > 1000) throw new Error("Die Hausaufgabe muss 3–1000 Zeichen lang sein.");
+  if (cleanAuthor.length > 80) throw new Error("Der Name ist zu lang (max. 80 Zeichen).");
+  for (const image of inputImages) {
+    if (!/^img[0-2]$/.test(String(image?.imageId ?? ""))) throw new Error("Ungültige Bild-ID.");
+    if (typeof image?.filename !== "string" || image.filename.length > 120) throw new Error("Der Bildname ist zu lang.");
+    if (typeof image?.dataUrl !== "string" ||
+        image.dataUrl.length > 800000 ||
+        !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image.dataUrl)) {
+      throw new Error("Ein Bild ist ungültig oder überschreitet die erlaubte Uploadgröße.");
+    }
+  }
+
+  let user = auth.currentUser;
+  if (!user) {
+    try {
+      user = (await signInAnonymously(auth)).user;
+    } catch (error) {
+      console.error("Untis-Next-Login für Hausaufgaben fehlgeschlagen:", error);
+      throw error;
+    }
+  }
+
+  const accountUser = !user.isAnonymous;
+  let profile = null;
+  if (accountUser) {
+    profile = await getProfile(user.uid);
+    if (!profile) throw new Error("Das TobiServices-Profil konnte nicht geladen werden.");
+  }
+
+  const entryRef = doc(db, "jdnextHomework", key, "entries", id);
+  const ownerRef = doc(db, "jdnextHomeworkPrivate", key, "entries", id);
+  const eventId = "reward-" + key + "-" + id;
+  const eventRef = doc(db, "jdnextCoinEvents", eventId);
+  const profileRef = accountUser ? doc(db, "users", user.uid) : null;
+  const imageMetadata = inputImages.map(image => ({
+    kind: "firestore",
+    imageId: String(image.imageId),
+    filename: String(image.filename || "bild.jpg").slice(0, 120)
+  }));
+  let rewardApplied = false;
+
+  await runTransaction(db, async transaction => {
+    const entrySnapshot = await transaction.get(entryRef);
+    if (entrySnapshot.exists()) throw new Error("Dieser Hausaufgabeneintrag existiert bereits.");
+
+    // All transaction reads happen before the first write.
+    const profileSnapshot = profileRef ? await transaction.get(profileRef) : null;
+    let authorTobiUid = null;
+    let coinBalance = null;
+    let profileData = null;
+
+    if (profileSnapshot?.exists) {
+      profileData = profileSnapshot.data() || {};
+      coinBalance = Number.isSafeInteger(profileData.goldCoins) ? profileData.goldCoins : null;
+      if (profileData.disabled !== true && coinBalance !== null && coinBalance > -50) {
+        authorTobiUid = user.uid;
+      }
+    }
+
+    if (authorTobiUid) {
+      const nextCoins = coinBalance + 10;
+      if (!Number.isSafeInteger(nextCoins)) throw new Error("Der Münzstand ist außerhalb des erlaubten Zahlenbereichs.");
+      transaction.update(profileRef, {
+        goldCoins: nextCoins,
+        lastProfileChangeAt: serverTimestamp(),
+        lastJdnextCoinEventId: eventId
+      });
+      transaction.set(eventRef, {
+        uid: user.uid,
+        amount: 10,
+        type: "homework-post",
+        hwKey: key,
+        entryId: id,
+        createdAt: serverTimestamp()
+      });
+      rewardApplied = true;
+    }
+
+    transaction.set(entryRef, {
+      text: cleanText,
+      author: cleanAuthor,
+      images: imageMetadata,
+      reportCount: 0,
+      createdAt: serverTimestamp()
+    });
+    transaction.set(ownerRef, {
+      authorAuthUid: user.uid,
+      authorTobiUid,
+      authorTobiAccountUid: accountUser ? user.uid : null,
+      createdAt: serverTimestamp()
+    });
+
+    inputImages.forEach(image => {
+      transaction.set(doc(db, "jdnextHomework", key, "entries", id, "images", String(image.imageId)), {
+        filename: String(image.filename || "bild.jpg").slice(0, 120),
+        dataUrl: image.dataUrl,
+        createdAt: serverTimestamp()
+      });
+    });
+  });
+
+  if (rewardApplied && accountUser) {
+    void syncPublicProfile({ ...profile, goldCoins: (Number.isSafeInteger(profile?.goldCoins) ? profile.goldCoins : 0) + 10 })
+      .catch(error => console.warn("Ranglisten-Profil wird später aktualisiert:", error));
+  }
+  return { ok: true, rewardQueued: rewardApplied, uid: user.uid, isAnonymous: user.isAnonymous };
 }
 
 export const hasTag = (profile, tag) =>
