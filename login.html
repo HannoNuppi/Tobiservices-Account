@@ -31,7 +31,7 @@ import {
   signOut,
   safeReturnUrl,
   CONFIG
-} from "./auth-core.js";
+} from "./auth-core.js?v=account-core-firebase-repair-20261014";
 
 const $=s=>document.querySelector(s);
 const ret=safeReturnUrl(new URLSearchParams(location.search).get("return")||"");
