@@ -44,7 +44,7 @@ echo DEPLOY FEHLGESCHLAGEN.
 echo.
 echo Pruefe, ob du mit einem Firebase-Konto angemeldet bist, das Schreibrechte
 echo fuer das Projekt tobiservices hat. Bei Bedarf zuerst ausfuehren:
-echo   firebase login
+echo   npx --yes firebase-tools@latest login
 echo Danach diese Datei erneut starten.
 pause
 exit /b 1
