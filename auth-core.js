@@ -514,8 +514,18 @@ export async function reportJdnextHomeworkEntry(hwKey, entryId) {
   });
 
   let removed = false;
-  if (nextCount >= 2) removed = await removeJdnextHomeworkAfterReports(key, id);
-  return { nextCount, removed, uid: user.uid };
+  let removalPending = false;
+  if (nextCount >= 2) {
+    try {
+      removed = await removeJdnextHomeworkAfterReports(key, id);
+      removalPending = !removed;
+    } catch (error) {
+      // The report itself is already committed. Keep that distinction clear to the UI.
+      removalPending = true;
+      console.error("Hausaufgabe wurde gemeldet, aber die Entfernung schlug fehl:", error);
+    }
+  }
+  return { nextCount, removed, removalPending, uid: user.uid };
 }
 
 export const hasTag = (profile, tag) => {
