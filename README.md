@@ -10,6 +10,8 @@ Gemeinsamer Account- und Rollenservice für TobiServices-Websites. Account Cente
 4. Ersetze dort die Regeln durch den Inhalt von [`firestore.rules`](https://github.com/HannoNuppi/Tobiservices-Account/blob/main/firestore.rules) und klicke auf **Publish**. Diese Schritte benötigen kein lokales Projektverzeichnis und keinen Cloud-Functions-Deploy.
 5. Öffne das Admin Center neu und melde dich mit dem Konto an, dessen Dokument `users/{UID}` bereits `tags: ["admin"]` hat.
 
+Alternativ kannst du im heruntergeladenen Repository die Datei [deploy_tobiservices_rules.bat](https://github.com/HannoNuppi/Tobiservices-Account/blob/main/deploy_tobiservices_rules.bat) starten. Sie veröffentlicht **nur** die Firestore-Regeln für das Projekt `tobiservices`; sie benötigt eine gültige Firebase-CLI-Anmeldung und deployt keine Cloud Functions.
+
 **Achtung:** Die Regeln sind die Sicherheitsgrenze für Tag-Verwaltung und Guthaben. Veröffentliche nicht versehentlich permissive Regeln wie `allow read, write: if true`.
 
 ## So funktioniert das Spark-kompatible Modell
