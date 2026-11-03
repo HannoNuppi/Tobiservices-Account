@@ -722,6 +722,40 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Private Fortnite Chest Tracker: each active account can access only its
+    // own state document. There is no public listing or shared user data.
+    match /users/{uid}/chestTracker/{documentId} {
+      allow get: if documentId == 'state'
+        && ownProfile(uid)
+        && isAccountUser()
+        && exists(userPath(uid))
+        && (!('disabled' in get(userPath(uid)).data)
+          || get(userPath(uid)).data.disabled != true);
+      allow list: if false;
+      allow create, update: if documentId == 'state'
+        && ownProfile(uid)
+        && isAccountUser()
+        && exists(userPath(uid))
+        && (!('disabled' in get(userPath(uid)).data)
+          || get(userPath(uid)).data.disabled != true)
+        && request.resource.data.keys().hasAll([
+          'schemaVersion', 'total', 'rate', 'records', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'schemaVersion', 'total', 'rate', 'records', 'updatedAt'
+        ])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.total is int
+        && request.resource.data.total >= 0
+        && request.resource.data.total <= 100000000
+        && request.resource.data.rate is int
+        && request.resource.data.rate >= 1
+        && request.resource.data.rate <= 1000000000
+        && request.resource.data.records is list
+        && request.resource.data.records.size() <= 100
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
     match /tobiAccounts/{usernameKey} {
       allow read, write: if false;
     }
