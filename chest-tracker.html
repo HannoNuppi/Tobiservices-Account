@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TobiServices – Fortnite Chest Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme.css">
+<style>
+.tc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px}
+.tc-panel{position:relative;z-index:1;padding:18px;border:1px solid var(--line);border-radius:16px;background:rgba(7,8,34,.34);min-width:0}
+.tc-panel h3{margin:0 0 6px}.tc-hint{color:var(--muted);font-size:12px;line-height:1.55;margin:0 0 14px}
+.tc-total{font:800 clamp(54px,11vw,78px)/.95 "Baloo 2";letter-spacing:-2px;font-variant-numeric:tabular-nums;margin:10px 0 2px}
+.tc-label{font-size:12px;color:var(--muted)}.tc-stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:17px}
+.tc-stat{padding:13px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.035)}
+.tc-stat strong{display:block;font:800 22px "Baloo 2";font-variant-numeric:tabular-nums}.tc-stat span{display:block;font-size:10px;color:var(--muted);line-height:1.4}
+.tc-progress{height:9px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:8px}
+.tc-progress>div{height:100%;width:0;background:linear-gradient(90deg,var(--gold),var(--pink));transition:width .2s}
+.tc-field{margin:0 0 12px}.tc-field label{display:block;font-size:12px;font-weight:700;margin:0 0 6px;color:var(--text)}
+.tc-input{width:100%;min-height:42px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);padding:9px 11px;font:14px Inter,sans-serif}
+.tc-input:focus{outline:2px solid rgba(255,204,77,.45);border-color:var(--gold)}
+.tc-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.tc-check{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin:6px 0 14px}
+.tc-check input{accent-color:var(--pink);width:17px;height:17px}.tc-actions{display:flex;gap:8px;flex-wrap:wrap}.tc-actions>*{flex:1}
+.tc-status{font-size:12px;color:var(--muted);line-height:1.5;min-height:18px;margin-top:9px;overflow-wrap:anywhere}
+.tc-table-wrap{overflow-x:auto}.tc-table{width:100%;min-width:530px;border-collapse:collapse}
+.tc-table th,.tc-table td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:11px}
+.tc-table th{color:var(--muted);font-weight:700}.tc-table td{color:var(--text)}
+.tc-num{font-variant-numeric:tabular-nums;font-weight:700}
+.tc-source{padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.035);margin-top:9px;font-size:12px;line-height:1.55}
+.tc-source a{color:var(--cyan);text-decoration:underline;text-underline-offset:3px}
+.tc-warning{border-left:3px solid var(--gold);padding:10px 12px;background:rgba(255,204,77,.07);border-radius:0 9px 9px 0;color:var(--muted);font-size:12px;line-height:1.55}
+.tc-badge{display:inline-block;border:1px solid rgba(255,204,77,.4);color:var(--gold);border-radius:99px;padding:3px 8px;font-size:10px;font-weight:800}
+@media(max-width:520px){.tc-row{grid-template-columns:1fr;gap:0}.tc-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body class="jd-page">
+<div class="jd-wrap" style="max-width:980px">
+  <div class="jd-topbar">
+    <div class="jd-logo"><span class="jd-logo-tag">TobiServices · Tool</span><div class="jd-logo-main"><span>FORTNITE</span><span class="l2">CHEST TRACKER</span></div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="jd-btn-ghost" href="./account.html">Account</a><button class="jd-btn-ghost" id="logoutBtn" type="button">Abmelden</button></div>
+  </div>
+  <div class="jd-banner" style="margin-top:16px"><b>Account-Synchronisierung:</b> Dein Stand und die letzten 100 Einträge werden in deinem TobiServices-Profil gespeichert und stehen dir nach Anmeldung auch auf anderen Geräten zur Verfügung. Nur dein eigenes Konto kann diese Daten lesen.</div>
+
+  <section class="jd-card" style="margin-top:14px">
+    <div style="font-size:10px;font-weight:800;letter-spacing:1.5px;color:var(--gold)">DEIN GESAMTSTAND</div>
+    <div class="tc-total" id="totalDisplay">–</div><div class="tc-label">geöffnete Truhen insgesamt</div>
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:18px;font-size:11px;color:var(--muted)"><span>Fortschritt zur 1.000-Truhen-Marke</span><strong id="progressText" style="color:var(--text)">0 / 1.000</strong></div>
+    <div class="tc-progress"><div id="progressBar"></div></div>
+    <div class="tc-stats">
+      <div class="tc-stat"><strong id="matchCount">0</strong><span>Runden im gespeicherten Verlauf</span></div>
+      <div class="tc-stat"><strong id="tokenCount">0</strong><span>markierte Token-Funde</span></div>
+      <div class="tc-stat"><strong id="averageCount">—</strong><span>Truhen je gespeicherter Runde</span></div>
+      <div class="tc-stat"><strong id="chanceDisplay">0 %</strong><span>Modellchance auf mindestens einen Fund</span></div>
+    </div>
+    <div class="tc-status" id="cloudStatus" role="status" aria-live="polite">Lade dein TobiServices-Profil …</div>
+  </section>
+
+  <div class="tc-grid">
+    <section class="tc-panel">
+      <h3>Runde hinzufügen</h3><p class="tc-hint">Trage nach dem Match die Anzahl der tatsächlich geöffneten Truhen ein.</p>
+      <form id="matchForm">
+        <div class="tc-field"><label for="chestAmount">Geöffnete Truhen</label><input class="tc-input" id="chestAmount" type="number" min="1" max="10000" step="1" value="1" inputmode="numeric" required></div>
+        <div class="tc-row">
+          <div class="tc-field"><label for="poi">POI / Drop-Spot</label><select class="tc-input" id="poi"><option>Nicht angegeben</option><option>The Chest</option><option>Buried Treasure Island</option><option>Arlong Park</option><option>Windmill Village</option><option>Anderer Spot</option></select></div>
+          <div class="tc-field"><label for="mode">Modus</label><select class="tc-input" id="mode"><option>Solo</option><option>Duo</option><option>Trio</option><option>Squad</option><option>Anderer</option></select></div>
+        </div>
+        <label class="tc-check"><input type="checkbox" id="tokenFound"> Pirate Shop Token in dieser Runde gefunden</label>
+        <button class="jd-btn" id="addMatchBtn" type="submit">＋ Runde speichern</button>
+        <div class="tc-status" id="matchStatus" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+
+    <section class="tc-panel">
+      <h3>Stand übernehmen</h3><p class="tc-hint">Trage hier deinen bisherigen Quest- oder Tracker-Stand ein. Der Gesamtstand wird ersetzt; der Verlauf bleibt erhalten.</p>
+      <form id="setForm">
+        <div class="tc-field"><label for="setTotal">Neuer Gesamtstand</label><input class="tc-input" id="setTotal" type="number" min="0" max="100000000" step="1" placeholder="z. B. 1000" inputmode="numeric" required></div>
+        <button class="jd-btn-ghost" id="setBtn" type="submit">Gesamtstand übernehmen</button>
+        <div class="tc-status" id="setStatus" role="status" aria-live="polite"></div>
+      </form>
+      <div class="tc-warning" style="margin-top:14px">Dein alter Cookie-Stand wird nicht automatisch mit dem TobiServices-Konto zusammengeführt. Trage ihn hier einmal ein oder importiere eine JSON-Sicherung aus der bisherigen Tracker-Seite.</div>
+    </section>
+
+    <section class="tc-panel">
+      <h3>Drop-Rate-Rechner</h3><p class="tc-hint">Wähle eine veröffentlichte Community-Schätzung oder trage eine eigene Annahme ein. Keine Zahl ist von Epic bestätigt.</p>
+      <div class="tc-field"><label for="ratePreset">Schätzung</label><select class="tc-input" id="ratePreset"><option value="2000">1:2.000 · VICE / Blortzen-Schätzung</option><option value="700000">1:700.000 · weitere Guides, unklar hergeleitet</option><option value="custom">Eigene Annahme</option></select></div>
+      <div class="tc-field"><label for="dropRate">1 Token pro X Truhen</label><input class="tc-input" id="dropRate" type="number" min="1" max="1000000000" step="1" value="2000"></div>
+      <div class="tc-stat"><strong id="rateResult">0 %</strong><span id="rateDescription">Modellchance auf mindestens einen Fund.</span></div>
+      <div class="tc-status">Modell: 1 − (1 − 1/X)<sup>Anzahl Truhen</sup>. Jede Truhe gilt als unabhängiger Versuch.</div>
+    </section>
+
+    <section class="tc-panel">
+      <h3>Datensicherung</h3><p class="tc-hint">Sichere deinen Stand als JSON oder importiere eine frühere Sicherung.</p>
+      <div class="tc-actions"><button class="jd-btn-ghost" id="exportBtn" type="button">↓ JSON exportieren</button><button class="jd-btn-ghost" id="importBtn" type="button">↑ JSON importieren</button><input id="importFile" type="file" accept="application/json,.json" hidden></div>
+      <div style="height:10px"></div><button class="jd-btn-ghost" id="undoBtn" type="button" style="width:100%">Letzten Eintrag rückgängig</button>
+      <div class="tc-status" id="backupStatus" role="status" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <section class="tc-panel" style="margin-top:14px">
+    <h3>Quellen und Einordnung der Wahrscheinlichkeiten</h3>
+    <div class="tc-warning"><b>Wichtig:</b> Epic hat keine offizielle Pirate-Shop-Droprate veröffentlicht. Die Angaben sind widersprüchliche, inoffizielle Schätzungen und keine Garantie.</div>
+    <div class="tc-source"><span class="tc-badge">1:2.000 · 0,05 %</span><br><b>VICE – Blortzen-Schätzung</b><br>VICE schreibt die Schätzung Dataminer Blortzen zu. Die angenommene Rechnung: ca. 1 % Chance auf eine Schatzbelohnung, davon ca. 10 % Supreme und darin eine von zwei gleich wahrscheinlichen Belohnungen. Die Rechnung setzt laut Artikel voraus, dass du keine der beiden Supreme-Belohnungen besitzt. <a href="https://www.vice.com/en/article/fortnite-pirate-shop-token-chances-drop-rate/" target="_blank" rel="noopener noreferrer">VICE-Artikel öffnen ↗</a></div>
+    <div class="tc-source"><span class="tc-badge">1:700.000 · ca. 0,000143 %</span><br><b>Beebom und Insider Gaming – weitere Schätzung</b><br>Beide Guides nennen ungefähr 1:700.000. Sie legen aber keine ähnlich nachvollziehbare vollständige Berechnung offen. Deshalb ist diese Zahl nur eine unbestätigte Community-Angabe. <a href="https://beebom.com/fortnite-pirate-shop-access-token-best-methods/" target="_blank" rel="noopener noreferrer">Beebom ↗</a> · <a href="https://insider-gaming.com/fortnite-pirate-token/" target="_blank" rel="noopener noreferrer">Insider Gaming ↗</a></div>
+    <div class="tc-source"><b>Offizielle und gegenprüfende Quellen</b><br><a href="https://www.fortnite.com/news/fortnite-treasure-hunters-the-greatest-adventure-of-all-time?lang=en-US" target="_blank" rel="noopener noreferrer">Epic Games – Saisonankündigung ↗</a> (enthält keine Dropchance) · <a href="https://www.theclick.gg/fortnite-pirate-shop-drop-rate/" target="_blank" rel="noopener noreferrer">The Click – Einordnung der unbekannten Odds ↗</a> · <a href="https://www.dexerto.com/fortnite/fortnite-adds-rare-reward-that-makes-entire-item-shop-free-for-14-days-but-theres-limits-3423637/" target="_blank" rel="noopener noreferrer">Dexerto – Epic hat die Odds nicht veröffentlicht ↗</a></div>
+    <p class="tc-hint" style="margin:12px 0 0">1:2.000 ist die transparentere Schätzung, aber nicht bestätigt. 1:700.000 wird ebenfalls von mehreren Guides genannt, bleibt hier jedoch schwächer belegt. Beide Werte bleiben auswählbar, damit du deine eigenen Beobachtungen vergleichen kannst.</p>
+  </section>
+
+  <section class="tc-panel" style="margin-top:14px">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><h3>Letzte Einträge</h3><p class="tc-hint" style="margin:4px 0 0">Die letzten 20 Einträge deines persönlichen Verlaufs.</p></div><button class="jd-btn-ghost" id="clearBtn" type="button">Verlauf und Stand löschen</button></div>
+    <div class="tc-table-wrap"><table class="tc-table"><thead><tr><th>Datum</th><th>Spot / Typ</th><th>Modus</th><th>Änderung</th><th>Gesamt</th><th>Token</th></tr></thead><tbody id="historyBody"><tr><td colspan="6">Noch keine Einträge.</td></tr></tbody></table></div>
+  </section>
+  <p style="text-align:center;color:var(--muted);font-size:10px;line-height:1.6;margin:18px 0">Fan-Tracker, kein offizielles Epic-Games-Produkt. Keine Verbindung zu Fortnite-Servern; Truhen müssen manuell eingetragen werden.</p>
+</div>
+
+<script src="theme.js"></script>
+<script type="module">
+import { onUser, signOut, db, CONFIG } from "./auth-core.js?v=chest-tracker-20261103a";
+import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const $ = id => document.getElementById(id);
+const state = { schemaVersion: 1, total: 0, rate: 2000, records: [] };
+let trackerRef = null, ready = false, busy = false;
+function intValue(value, max) { const n=Number(value); return Number.isSafeInteger(n)&&n>=0&&n<=max?n:null; }
+function numberText(value) { return Number(value||0).toLocaleString("de-DE"); }
+function chance(total, rate) { return !total||!rate?0:1-Math.pow(1-1/rate,total); }
+function percent(value) { if(value>=.99995)return "99,995 % +"; return (value*100).toLocaleString("de-DE",{maximumFractionDigits:value<.01?4:2,minimumFractionDigits:value<.01?4:2})+" %"; }
+function status(id,message) { $(id).textContent=message; }
+function safeDate(value) { const date=new Date(value); return Number.isNaN(date.getTime())?"Unbekannt":new Intl.DateTimeFormat("de-DE",{dateStyle:"short",timeStyle:"short"}).format(date); }
+function snapshot() { return JSON.parse(JSON.stringify(state)); }
+function render() {
+  $("totalDisplay").textContent=numberText(state.total);
+  $("progressText").textContent=numberText(state.total)+" / 1.000";
+  $("progressBar").style.width=Math.min(100,state.total/10)+"%";
+  const matches=state.records.filter(record=>record.type==="Runde");
+  const found=matches.filter(record=>record.token===true).length;
+  const sum=matches.reduce((acc,record)=>acc+(Number(record.amount)||0),0);
+  $("matchCount").textContent=numberText(matches.length);
+  $("tokenCount").textContent=numberText(found);
+  $("averageCount").textContent=matches.length?(sum/matches.length).toLocaleString("de-DE",{maximumFractionDigits:1}):"—";
+  $("chanceDisplay").textContent=percent(chance(state.total,state.rate));
+  $("rateResult").textContent=percent(chance(state.total,state.rate));
+  $("rateDescription").textContent="Bei "+numberText(state.total)+" Truhen und einer angenommenen Rate von 1:"+numberText(state.rate)+".";
+  $("dropRate").value=String(state.rate);
+  $("ratePreset").value=state.rate===2000||state.rate===700000?String(state.rate):"custom";
+  renderHistory();
+}
+function renderHistory() {
+  const body=$("historyBody"); body.textContent="";
+  const records=state.records.slice(-20).reverse();
+  if(!records.length){const tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=6;td.textContent="Noch keine Einträge.";tr.appendChild(td);body.appendChild(tr);return;}
+  records.forEach(record=>{
+    const tr=document.createElement("tr");
+    const values=[safeDate(record.at),record.type==="Runde"?(record.poi||"Runde"):"Stand angepasst",record.type==="Runde"?(record.mode||"—"):"—",(record.type==="Runde"?"+":"")+numberText(record.amount),numberText(record.after),record.token?"TOKEN!":"—"];
+    values.forEach((value,index)=>{const td=document.createElement("td");td.textContent=value;if(index===3||index===4)td.className="tc-num";if(index===5&&record.token)td.style.color="var(--gold)";tr.appendChild(td);});
+    body.appendChild(tr);
+  });
+}
+function setButtonsDisabled(disabled){["addMatchBtn","setBtn","undoBtn","clearBtn","exportBtn","importBtn"].forEach(id=>{if($(id))$(id).disabled=disabled||!ready;});}
+async function persist(statusId,successMessage){
+  if(!ready||!trackerRef||busy)return false;
+  busy=true;setButtonsDisabled(true);
+  try{
+    await setDoc(trackerRef,{schemaVersion:1,total:state.total,rate:state.rate,records:state.records.slice(-100),updatedAt:serverTimestamp()});
+    state.records=state.records.slice(-100);render();
+    status("cloudStatus","✓ Mit deinem TobiServices-Konto synchronisiert.");
+    if(statusId)status(statusId,successMessage||"Gespeichert.");
+    return true;
+  }catch(error){
+    console.error("Chest Tracker konnte nicht gespeichert werden:",error);
+    status("cloudStatus","Speichern fehlgeschlagen. Prüfe, ob die neuen Firestore-Regeln veröffentlicht wurden.");
+    if(statusId)status(statusId,error?.code==="permission-denied"?"Zugriff verweigert: Die aktualisierten Firestore-Regeln müssen noch in Firebase veröffentlicht werden.":(error?.message||"Speichern fehlgeschlagen."));
+    return false;
+  }finally{busy=false;setButtonsDisabled(false);}
+}
+async function loadTracker(user,profile){
+  trackerRef=doc(db,"users",user.uid,"chestTracker","state");
+  const snap=await getDoc(trackerRef);
+  if(snap.exists()){
+    const stored=snap.data()||{},total=intValue(stored.total,100000000),rate=intValue(stored.rate,1000000000);
+    if(stored.schemaVersion!==1||total===null||!rate||!Array.isArray(stored.records))throw new Error("Der gespeicherte Tracker-Datensatz hat ein unbekanntes Format.");
+    state.total=total;state.rate=rate;state.records=stored.records.slice(-100).filter(item=>item&&typeof item==="object");
+  }
+  ready=true;render();setButtonsDisabled(false);
+  status("cloudStatus","✓ Angemeldet als "+(profile.displayName||user.email||"TobiServices-Nutzer")+" · mit deinem Konto synchronisiert.");
+}
+function addRecord(record){state.records.push(record);if(state.records.length>100)state.records=state.records.slice(-100);}
+$("matchForm").addEventListener("submit",async event=>{
+  event.preventDefault();if(!ready||busy)return;
+  const amount=intValue($("chestAmount").value,10000);if(amount===null||amount<1)return status("matchStatus","Bitte eine Anzahl zwischen 1 und 10.000 eintragen.");
+  const old=snapshot(),before=state.total;state.total+=amount;
+  addRecord({id:String(Date.now())+"-"+Math.random().toString(36).slice(2,7),type:"Runde",at:new Date().toISOString(),amount,before,after:state.total,poi:$("poi").value,mode:$("mode").value,token:$("tokenFound").checked});
+  render();const ok=await persist("matchStatus",amount+" Truhen hinzugefügt. Neuer Stand: "+numberText(state.total)+".");
+  if(ok)$("tokenFound").checked=false;else{Object.assign(state,old);render();}
+});
+$("setForm").addEventListener("submit",async event=>{
+  event.preventDefault();if(!ready||busy)return;
+  const next=intValue($("setTotal").value,100000000);if(next===null)return status("setStatus","Bitte eine gültige Gesamtzahl eintragen.");
+  const old=snapshot(),before=state.total;state.total=next;
+  addRecord({id:String(Date.now())+"-set",type:"Korrektur",at:new Date().toISOString(),amount:next-before,before,after:next,token:false});
+  render();if(!(await persist("setStatus","Gesamtstand auf "+numberText(next)+" gesetzt."))){Object.assign(state,old);render();}
+});
+$("ratePreset").addEventListener("change",async()=>{if($("ratePreset").value==="custom")return;$("dropRate").value=$("ratePreset").value;await changeRate();});
+$("dropRate").addEventListener("change",changeRate);
+async function changeRate(){
+  if(!ready||busy)return;const rate=intValue($("dropRate").value,1000000000);if(rate===null||rate<1){$("dropRate").value=String(state.rate);return;}
+  const old=state.rate;state.rate=rate;render();if(!(await persist(null,null))){state.rate=old;render();}
+}
+$("undoBtn").addEventListener("click",async()=>{
+  if(!ready||busy||!state.records.length)return status("backupStatus","Kein Eintrag zum Rückgängigmachen vorhanden.");
+  const old=snapshot(),last=state.records.pop();state.total=Number.isSafeInteger(last.before)?last.before:state.total;render();
+  if(!(await persist("backupStatus","Letzter Eintrag rückgängig gemacht."))){Object.assign(state,old);render();}
+});
+$("clearBtn").addEventListener("click",async()=>{
+  if(!ready||busy||!window.confirm("Gesamtstand und Verlauf wirklich löschen? Das betrifft dein TobiServices-Konto."))return;
+  const old=snapshot();state.total=0;state.records=[];render();
+  if(!(await persist("backupStatus","Tracker wurde zurückgesetzt."))){Object.assign(state,old);render();}
+});
+$("exportBtn").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify({version:1,schemaVersion:1,total:state.total,rate:state.rate,records:state.records},null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download="tobiservices-fortnite-chest-tracker.json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);status("backupStatus","JSON-Sicherung erstellt.");
+});
+$("importBtn").addEventListener("click",()=>$("importFile").click());
+$("importFile").addEventListener("change",async()=>{
+  const file=$("importFile").files&&$("importFile").files[0];if(!file)return;
+  try{
+    const imported=JSON.parse(await file.text()),total=intValue(imported.total,100000000),rate=intValue(imported.rate||2000,1000000000);
+    if(imported.schemaVersion!==1&&imported.version!==1)throw new Error("Unbekanntes Sicherungsformat.");
+    if(total===null||rate===null||rate<1||!Array.isArray(imported.records))throw new Error("Die Sicherung enthält ungültige Daten.");
+    if(!window.confirm("Import ersetzt deinen aktuellen Gesamtstand und den Verlauf. Fortfahren?"))return;
+    const old=snapshot();state.total=total;state.rate=rate;state.records=imported.records.slice(-100);render();
+    if(!(await persist("backupStatus","Sicherung importiert."))){Object.assign(state,old);render();}
+  }catch(error){status("backupStatus","Import fehlgeschlagen: "+(error?.message||"Ungültige Datei."));}
+  finally{$("importFile").value="";}
+});
+$("logoutBtn").addEventListener("click",async()=>{await signOut();location.href=CONFIG.loginUrl+"?return="+encodeURIComponent(location.href);});
+onUser(async(user,profile,profileError)=>{
+  if(!user||user.isAnonymous){location.replace(CONFIG.loginUrl+"?return="+encodeURIComponent(location.href));return;}
+  if(!profile||profile.disabled===true){status("cloudStatus",profileError?.message||"Dein TobiServices-Profil ist nicht verfügbar oder gesperrt.");return;}
+  try{await loadTracker(user,profile);}
+  catch(error){console.error("Tracker konnte nicht geladen werden:",error);status("cloudStatus",error?.code==="permission-denied"?"Firestore-Zugriff verweigert. Die neue Regel für dein persönliches Chest-Tracker-Dokument muss noch veröffentlicht werden.":(error?.message||"Tracker konnte nicht geladen werden."));}
+});
+</script>
+</body>
+</html>
