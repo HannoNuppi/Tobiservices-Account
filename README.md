@@ -88,3 +88,11 @@ GitHub Pages liefert statische Dateien aus. Ein clientseitiger Beta-Bildschirm i
 ## GitHub Pages
 
 Die Website-Dateien werden bei aktivierter GitHub-Pages-Konfiguration von `main` veröffentlicht. Die textbasierte Hausaufgaben-, Report- und Münzlogik benötigt nur die veröffentlichte `firestore.rules` dieses Repositorys und aktiviert Anonym-Auth. Nur die getrennte Discord-Bildfunktion braucht weiterhin Cloud Functions.
+
+## Fortnite Chest Tracker
+
+The authenticated page [chest-tracker.html](https://github.com/HannoNuppi/Tobiservices-Account/blob/main/chest-tracker.html) records manually entered Fortnite chest counts and token findings. The total and the latest 100 history records are stored in the user's private Firestore document at `users/{uid}/chestTracker/state`.
+
+Each account can read and update only its own tracker document. The page uses the existing TobiServices Firebase Authentication session and includes JSON export/import.
+
+**One-time deployment required:** publish the updated `firestore.rules` in Firebase Console → project `tobiservices` → Firestore Database → Rules. Saving will return `permission-denied` until the rules are published. Do not replace the full ruleset with permissive rules.
