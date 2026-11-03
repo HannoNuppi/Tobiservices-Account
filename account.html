@@ -66,6 +66,7 @@ onUser((user,profile,profileError)=>{
     +"<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-top:18px\">"
     +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
     +"<a class=\"jd-btn\" href=\"https://hannonuppi.github.io/JDNEXT_UNTIS/\">Untis Next öffnen</a>"
+    +"<a class=\"jd-btn\" href=\"./chest-tracker.html\">Fortnite Chest Tracker</a>"
     +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
 
   const accountName=user.displayName||profile.displayName||user.email||"TobiServices";
