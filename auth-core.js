@@ -903,7 +903,7 @@ export async function setTags(uid, tags) {
   return { ok: true, uid: targetUid, tags: cleanTags };
 }
 
-const ADMIN_GRANTABLE_EVENT_THEMES = new Set(["WinterEvent", "BirthdayEvent", "HalloweenEvent"]);
+const ADMIN_GRANTABLE_EVENT_THEMES = new Set(["WinterEvent", "BirthdayEvent", "HalloweenEvent", "WinterGoldEvent"]);
 
 export async function setOwnedEventTheme(uid, themeId, grant = true) {
   const targetUid = String(uid ?? "");
@@ -934,6 +934,96 @@ export async function setOwnedEventTheme(uid, themeId, grant = true) {
   if (!grant && target.equippedTheme === id) update.equippedTheme = "Next";
   await updateDoc(targetRef, update);
   return { ok: true, uid: targetUid, ownedThemes: nextOwned, granted: Boolean(grant), themeId: id };
+}
+
+
+function getBerlinCalendarDate() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts
+    .filter(part => part.type !== "literal")
+    .map(part => [part.type, Number(part.value)]));
+  return { year: values.year, month: values.month, day: values.day };
+}
+
+/**
+ * Opens exactly today's Advent door. The browser performs a friendly date
+ * check; Firestore Rules independently enforce the server date and reward.
+ * A device clock change cannot grant an earlier or future door.
+ */
+export async function openAdventDoor(dayNumber) {
+  const day = Number(dayNumber);
+  if (!Number.isInteger(day) || day < 1 || day > 24) {
+    throw new Error("Ungültige Adventskalender-Tür.");
+  }
+
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.isAnonymous) {
+    throw new Error("Bitte melde dich mit deinem TobiServices-Konto an.");
+  }
+
+  const today = getBerlinCalendarDate();
+  if (today.month !== 12 || today.day !== day) {
+    throw new Error("Diese Tür kann nur am " + day + ". Dezember (Europe/Berlin) geöffnet werden.");
+  }
+
+  const profileRef = doc(db, "users", currentUser.uid);
+  return await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(profileRef);
+    if (!snapshot.exists()) throw new Error("Dein TobiServices-Profil wurde nicht gefunden.");
+
+    const profile = snapshot.data() || {};
+    if (profile.disabled === true) throw new Error("Dieses Konto ist momentan gesperrt.");
+
+    const currentYear = today.year;
+    const previousDoors = profile.adventYear === currentYear && Array.isArray(profile.adventDoors)
+      ? profile.adventDoors.filter(value => Number.isInteger(value) && value >= 1 && value <= 24)
+      : [];
+    if (previousDoors.includes(day)) {
+      throw new Error("Diese Tür wurde bereits geöffnet.");
+    }
+
+    const nextDoors = [...new Set([...previousDoors, day])].sort((a, b) => a - b);
+    const previousThemes = Array.isArray(profile.ownedThemes) ? profile.ownedThemes : [];
+    const nextThemes = [...previousThemes];
+    const grantedThemes = [];
+
+    if (day === 1 && !nextThemes.includes("WinterEvent")) {
+      nextThemes.push("WinterEvent");
+      grantedThemes.push("WinterEvent");
+    }
+
+    const allDoorsOpened = Array.from({ length: 24 }, (_, index) => index + 1)
+      .every(number => nextDoors.includes(number));
+    if (day === 24 && allDoorsOpened && !nextThemes.includes("WinterGoldEvent")) {
+      nextThemes.push("WinterGoldEvent");
+      grantedThemes.push("WinterGoldEvent");
+    }
+
+    if (nextThemes.length > 30) {
+      throw new Error("Dein Profil hat bereits zu viele gespeicherte Themes. Bitte wende dich an einen Admin.");
+    }
+
+    transaction.update(profileRef, {
+      adventYear: currentYear,
+      adventDoors: nextDoors,
+      ownedThemes: nextThemes,
+      lastProfileChangeAt: serverTimestamp()
+    });
+
+    return {
+      ok: true,
+      adventYear: currentYear,
+      adventDoors: nextDoors,
+      ownedThemes: nextThemes,
+      grantedThemes,
+      completed: allDoorsOpened
+    };
+  });
 }
 
 export async function setGoldCoins(uid, amount) {
