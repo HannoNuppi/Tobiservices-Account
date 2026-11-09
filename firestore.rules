@@ -354,7 +354,6 @@ service cloud.firestore {
       let doorsBefore = previousAdventDoors();
       let doorsAfter = request.resource.data.adventDoors;
       let themesBefore = previousOwnedThemes();
-      let themesAfter = request.resource.data.ownedThemes;
       let grantWinter = today == 1 && !themesBefore.hasAny(['WinterEvent']);
       let grantWinterGold = today == 24
         && doorsAfter.hasAll([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
