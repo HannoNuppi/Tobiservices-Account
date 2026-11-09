@@ -318,7 +318,7 @@ service cloud.firestore {
       return themeId is string
         && ['Next', 'Ocean', 'Sunset', 'Forest', 'Candy', 'Midnight', 'Aurora', 'Retro',
           'RoyalRebels', 'Bronze', 'Silver', 'Gold', 'WinterEvent', 'BirthdayEvent',
-          'AdminMatrix', 'HalloweenEvent'].hasAny([themeId]);
+          'AdminMatrix', 'HalloweenEvent', 'WinterGoldEvent'].hasAny([themeId]);
     }
 
     // Ermöglicht die Halloween-Freischaltung am 31. Oktober nach lokaler Uhr
@@ -327,6 +327,67 @@ service cloud.firestore {
       return (request.time.month() == 10 && request.time.day() == 30 && request.time.hours() >= 22)
         || (request.time.month() == 10 && request.time.day() == 31)
         || (request.time.month() == 11 && request.time.day() == 1 && request.time.hours() < 7);
+    }
+
+    // The Advent calendar uses Berlin time. December is CET (UTC+1).
+    // The browser date is never trusted for unlocking doors.
+    function adventBerlinTime() {
+      return request.time + duration.value(1, 'h');
+    }
+
+    function previousAdventDoors() {
+      return ('adventYear' in resource.data
+        && resource.data.adventYear == adventBerlinTime().year()
+        && 'adventDoors' in resource.data
+        && resource.data.adventDoors is list)
+        ? resource.data.adventDoors : [];
+    }
+
+    function previousOwnedThemes() {
+      return ('ownedThemes' in resource.data && resource.data.ownedThemes is list)
+        ? resource.data.ownedThemes : [];
+    }
+
+    function validAdventDoorUpdate(uid) {
+      let berlinNow = adventBerlinTime();
+      let today = berlinNow.day();
+      let doorsBefore = previousAdventDoors();
+      let doorsAfter = request.resource.data.adventDoors;
+      let themesBefore = previousOwnedThemes();
+      let themesAfter = request.resource.data.ownedThemes;
+      let grantWinter = today == 1 && !themesBefore.hasAny(['WinterEvent']);
+      let grantWinterGold = today == 24
+        && doorsAfter.hasAll([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+          13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24])
+        && !themesBefore.hasAny(['WinterGoldEvent']);
+      let expectedThemeCount = themesBefore.size()
+        + (grantWinter ? 1 : 0)
+        + (grantWinterGold ? 1 : 0);
+
+      return ownProfile(uid)
+        && isAccountUser()
+        && (!('disabled' in resource.data) || resource.data.disabled != true)
+        && berlinNow.month() == 12
+        && today >= 1 && today <= 24
+        && request.resource.data.adventYear == berlinNow.year()
+        && request.resource.data.adventDoors is list
+        && request.resource.data.adventDoors.size() == doorsBefore.size() + 1
+        && request.resource.data.adventDoors.size() <= 24
+        && request.resource.data.adventDoors.hasOnly([1, 2, 3, 4, 5, 6, 7, 8,
+          9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24])
+        && request.resource.data.adventDoors.hasAll(doorsBefore)
+        && !doorsBefore.hasAny([today])
+        && request.resource.data.adventDoors.hasAny([today])
+        && request.resource.data.ownedThemes is list
+        && request.resource.data.ownedThemes.size() <= 30
+        && request.resource.data.ownedThemes.hasAll(themesBefore)
+        && request.resource.data.ownedThemes.size() == expectedThemeCount
+        && (!grantWinter || request.resource.data.ownedThemes.hasAny(['WinterEvent']))
+        && (!grantWinterGold || request.resource.data.ownedThemes.hasAny(['WinterGoldEvent']))
+        && request.resource.data.lastProfileChangeAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'adventYear', 'adventDoors', 'ownedThemes', 'lastProfileChangeAt'
+        ]);
     }
 
     // Ein Kauf ist nur gültig, wenn Profilabbuchung und Event atomar zusammenpassen.
@@ -533,6 +594,10 @@ service cloud.firestore {
             && request.resource.data.ownedThemes.hasAny([request.resource.data.equippedTheme])
           )
         )
+      ) || (
+        // A single Advent door can be opened only on its exact Berlin calendar day.
+        ownProfile(uid)
+        && validAdventDoorUpdate(uid)
       ) || (
         // An account may self-unlock Halloween only once on the event date.
         ownProfile(uid)
