@@ -32,7 +32,7 @@ Feldbedeutung:
 - `adventDoors`: Liste der am jeweiligen Kalendertag geöffneten Türnummern (Zahlen 1–24); wird pro Jahr neu begonnen
 - `ownedThemes`: freigeschaltete Themes, darunter `WinterEvent` nach Tür 1 und `WinterGoldEvent` nach Tür 24 bei vollständigem Fortschritt
 
-**Nicht vom Browser beschreiben lassen.** Die Firestore-Regeln verweigern Client-Schreibzugriffe auf `users`. Die vertrauenswürdigen Cloud Functions erstellen Profile und ändern Tags.
+**Nicht frei vom Browser beschreiben lassen.** Die Firestore-Regeln erlauben nur eng begrenzte, ausdrücklich geprüfte Client-Aktionen (z. B. kosmetische Profileinstellungen, Theme-Auswahl und das Öffnen der jeweils aktuellen Adventstür). Rollen, Tags und administrative Änderungen bleiben geschützt und sind nicht durch normale Nutzer selbst änderbar.
 
 ## 3. Ersten Admin einmalig einrichten
 
