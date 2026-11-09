@@ -21,7 +21,7 @@
 </div>
 <script src="theme.js"></script>
 <script type="module">
-import { onUser, signOut, isAdmin, CONFIG, PROFILE_TITLES, PROFILE_ICONS, updateCosmeticProfile } from "./auth-core.js?v=account-core-stability-20261014c";
+import { onUser, signOut, isAdmin, CONFIG, PROFILE_TITLES, PROFILE_ICONS, updateCosmeticProfile } from "./auth-core.js?v=advent-calendar-2026-1";
 const app=document.getElementById("app");
 
 onUser((user,profile,profileError)=>{
@@ -65,6 +65,7 @@ onUser((user,profile,profileError)=>{
     +"<div style=\"margin-top:12px;font-size:11px;color:var(--muted)\">Account-ID<div id=\"uid\" class=\"mono\" style=\"margin-top:5px;word-break:break-all\"></div></div>"
     +"<div style=\"display:flex;gap:8px;flex-wrap:wrap;margin-top:18px\">"
     +(isAdmin(profile)?"<button class=\"jd-btn\" id=\"admin\">Admin Center</button>":"")
+    +"<a class=\"jd-btn\" href=\"./advent.html\">🎄 Adventskalender</a>"
     +"<a class=\"jd-btn\" href=\"https://hannonuppi.github.io/JDNEXT_UNTIS/\">Untis Next öffnen</a>"
     +"<a class=\"jd-btn\" href=\"./chest-tracker.html\">Fortnite Chest Tracker</a>"
     +"<button class=\"jd-btn-ghost\" id=\"logout\">Abmelden</button></div></div>";
