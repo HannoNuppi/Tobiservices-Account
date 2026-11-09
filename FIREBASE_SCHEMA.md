@@ -28,6 +28,9 @@ Feldbedeutung:
 - `tags`: Array aus Strings, zum Beispiel `["admin"]`
 - `authProvider`: Kennzeichnung des neuen Auth-Weges
 - `createdAt`, `lastProfileChangeAt`: Firestore-Timestamps
+- `adventYear`: Kalenderjahr des gespeicherten Adventsfortschritts (Zahl)
+- `adventDoors`: Liste der am jeweiligen Kalendertag geöffneten Türnummern (Zahlen 1–24); wird pro Jahr neu begonnen
+- `ownedThemes`: freigeschaltete Themes, darunter `WinterEvent` nach Tür 1 und `WinterGoldEvent` nach Tür 24 bei vollständigem Fortschritt
 
 **Nicht vom Browser beschreiben lassen.** Die Firestore-Regeln verweigern Client-Schreibzugriffe auf `users`. Die vertrauenswürdigen Cloud Functions erstellen Profile und ändern Tags.
 
@@ -65,7 +68,13 @@ Lesen darf öffentlich möglich sein; Schreiben erfolgt nur über die geschützt
 
 Diese Collection kann ältere Username/Passwort-Konten enthalten. Passwort-Hash und Salt werden serverseitig gehalten und sind durch Firestore-Regeln gesperrt. Neue Firebase-E-Mail-Konten benötigen keinen Eintrag in dieser Collection. Bei noch bestehenden Legacy-Konten synchronisiert die Tag-Funktion die Tags soweit ein entsprechender Legacy-Eintrag vorhanden ist.
 
-## 7. Deployment-Hinweis
+## 7. Adventskalender
+
+Der Adventskalender speichert `adventYear` und `adventDoors` in `users/{uid}`. Die Firestore-Regeln erlauben genau eine neue Tür pro Nutzer und Datum, prüfen die Serverzeit in `Europe/Berlin` und verhindern das Nachholen verpasster Tage. Tür 1 vergibt `WinterEvent`; Tür 24 vergibt `WinterGoldEvent` nur, wenn alle 24 Türen desselben Jahres geöffnet wurden. Admin-Vorschau öffnet Türen ausschließlich visuell und schreibt keinen Fortschritt.
+
+Nach Änderungen an `firestore.rules` müssen die Regeln mit `deploy_tobiservices_rules.bat` oder `firebase deploy --only firestore:rules --project tobiservices` veröffentlicht werden. Erst danach lassen sich die Türen sicher öffnen.
+
+## 8. Deployment-Hinweis
 
 Nach Code-Änderungen:
 
