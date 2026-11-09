@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="theme-color" content="#10271e">
+<title>TobiServices – Adventskalender</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./theme.css">
+<style>
+.advent-hero{position:relative;overflow:hidden;padding:22px;border-radius:20px;border:1px solid rgba(238,205,112,.36);background:radial-gradient(circle at 85% 0,rgba(243,205,110,.24),transparent 38%),linear-gradient(140deg,#102c22,#173b30 58%,#604a19);box-shadow:0 16px 38px #0003}
+.advent-hero:after{content:"✦  ❄  ✧  ❄  ✦";position:absolute;right:18px;top:16px;color:#fff2c0;letter-spacing:9px;opacity:.55;font-size:18px;pointer-events:none}
+.advent-hero h1{font:800 clamp(25px,5vw,38px)/1.05 "Baloo 2";margin:6px 0;color:#fff0bd}
+.advent-hero p{max-width:620px;color:#d4e6dc;font-size:13px;line-height:1.6;margin:8px 0 0}
+.advent-kicker{font-size:10px;letter-spacing:2px;font-weight:800;color:#ffe5a0;text-transform:uppercase}
+.advent-progress{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:16px;padding:13px 15px;border:1px solid rgba(255,224,154,.25);border-radius:14px;background:rgba(0,0,0,.16)}
+.advent-progress strong{display:block;font:800 24px "Baloo 2";color:#ffdf8b}
+.advent-progress small{display:block;color:#d4e6dc;font-size:10px}
+.advent-progress-track{height:8px;border-radius:10px;overflow:hidden;background:#ffffff20;margin-top:8px}
+.advent-progress-fill{height:100%;background:linear-gradient(90deg,#d8a93e,#fff0b2);border-radius:10px;transition:width .25s}
+.advent-tools{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.advent-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.advent-door{position:relative;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px 8px;border:1px solid rgba(255,224,154,.23);border-radius:15px;background:linear-gradient(150deg,rgba(23,62,49,.96),rgba(14,39,31,.96));color:#f4f2df;text-align:center;overflow:hidden}
+.advent-door:before{content:"";position:absolute;inset:5px;border:1px solid rgba(255,231,169,.1);border-radius:10px;pointer-events:none}
+.advent-door .door-number{font:800 30px/1 "Baloo 2";color:#ffe3a0;text-shadow:0 0 14px #f3c65b66}
+.advent-door .door-icon{font-size:22px}
+.advent-door .door-status{font-size:9px;letter-spacing:1px;font-weight:800;text-transform:uppercase;color:#b8d8c9}
+.advent-door .door-message{font-size:10px;line-height:1.4;color:#f4e8c8;max-width:180px}
+.advent-door.opened{border-color:rgba(255,221,132,.58);background:linear-gradient(145deg,#35553c,#71551e)}
+.advent-door.today{border-color:#ffe6a1;box-shadow:0 0 20px #e6bd5a2e}
+.advent-door.missed{filter:saturate(.48);opacity:.72}
+.advent-door.preview{background:linear-gradient(145deg,#35553c,#71551e);border-color:#ffe6a1}
+.advent-door button{position:relative;z-index:1;border:1px solid rgba(255,229,166,.4);border-radius:999px;padding:7px 12px;background:linear-gradient(90deg,#d4a33d,#ffedaa);color:#34250c;font:800 11px "Baloo 2";cursor:pointer}
+.advent-door button:disabled{opacity:.65;cursor:default}
+.advent-note{margin-top:12px;padding:13px 15px;border:1px solid var(--line);border-radius:13px;background:var(--card);font-size:12px;line-height:1.6;color:var(--muted)}
+.advent-note strong{color:var(--gold)}
+.advent-rewards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.advent-reward{padding:13px;border:1px solid rgba(255,224,154,.22);border-radius:14px;background:rgba(255,255,255,.045)}
+.advent-reward b{display:block;color:#ffe6a4;font:800 14px "Baloo 2"}
+.advent-reward span{display:block;color:#c4d7ca;font-size:11px;line-height:1.5;margin-top:4px}
+.advent-status{min-height:20px;margin:10px 0;color:var(--cyan);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.advent-preview-tag{display:inline-block;border:1px solid #f0ce7b88;border-radius:999px;padding:5px 9px;color:#ffe3a0;font-size:10px;font-weight:800;letter-spacing:1px}
+@media(max-width:620px){.advent-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.advent-door{min-height:140px;padding:10px 5px}.advent-door .door-number{font-size:26px}.advent-rewards{grid-template-columns:1fr}}
+@media(max-width:390px){.advent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body class="jd-page">
+<div class="jd-wrap">
+  <div class="jd-topbar">
+    <div class="jd-logo"><span class="jd-logo-tag">TobiServices</span><div class="jd-logo-main"><span>ADVENT</span><span class="l2">KALENDER</span></div></div>
+    <div class="actions" style="margin:0">
+      <a class="jd-btn-ghost" href="./account.html">Account</a>
+      <a class="jd-btn-ghost" href="https://hannonuppi.github.io/JDNEXT_UNTIS/">Untis Next</a>
+    </div>
+  </div>
+  <main id="app" style="margin-top:18px">
+    <div class="jd-card">Adventskalender wird geladen …</div>
+  </main>
+</div>
+<script src="./theme.js"></script>
+<script type="module">
+import { onUser, isAdmin, openAdventDoor, requireLogin } from "./auth-core.js?v=advent-calendar-2026-1";
+
+const app = document.getElementById("app");
+const doorContent = [
+  ["❄️","Winterwunder wartet auf dich. Tür 1 schaltet das bestehende Theme „Winterwunder“ frei."],
+  ["🕯️","Ein kleines Licht für einen gemütlichen Dezemberabend."],
+  ["⭐","Heute ist ein guter Tag für einen freundlichen Gedanken."],
+  ["🎁","Ein virtuelles Päckchen voller Winterstimmung."],
+  ["☕","Zeit für eine warme Pause und einen ruhigen Moment."],
+  ["🌲","Ein Tannenzweig bringt ein bisschen Weihnachtswald ins Haus."],
+  ["✨","Ein kleiner Stern leuchtet heute nur für dich."],
+  ["🧣","Mach es dir gemütlich – der Winter ist da."],
+  ["🍪","Der Duft von Plätzchen gehört einfach zum Advent."],
+  ["🔔","Ein leiser Glockenklang läutet den nächsten Adventstag ein."],
+  ["🦌","Ein Rentier schickt weihnachtliche Grüße."],
+  ["❄️","Ein zweiter Schneeflockengruß aus dem Winterwald."],
+  ["🧤","Warme Gedanken für kalte Tage."],
+  ["🎄","Die Lichter am Weihnachtsbaum funkeln ein bisschen heller."],
+  ["🌟","Halbzeit im Advent – schön, dass du dabei bist."],
+  ["🧦","Ein gemütlicher Gruß aus der Weihnachtswerkstatt."],
+  ["🎀","Eine Schleife macht jedes Geschenk ein wenig festlicher."],
+  ["🕊️","Ein Wunsch für Frieden und einen freundlichen Tag."],
+  ["🍫","Eine kleine Portion winterliche Gemütlichkeit."],
+  ["⛄","Der Schneemann lässt winterliche Grüße da."],
+  ["🛷","Ein gedanklicher Schlittenausflug durch den Schnee."],
+  ["🕯️","Ein weiteres Licht auf dem Weg zum Weihnachtsfest."],
+  ["🎅","Die Weihnachtswerkstatt ist fast bereit."],
+  ["👑","Du hast den Kalender vollständig geöffnet – Winter Gold wird freigeschaltet."]
+];
+
+function berlinDate(){
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone:"Europe/Berlin", year:"numeric", month:"2-digit", day:"2-digit"
+  }).formatToParts(new Date());
+  const result = {};
+  for(const part of parts) if(part.type!=="literal") result[part.type]=Number(part.value);
+  return {year:result.year,month:result.month,day:result.day};
+}
+function esc(value){
+  return String(value??"").replace(/[&<>"']/g, char => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+  })[char]);
+}
+
+let activeUser=null;
+let activeProfile=null;
+let activeAdmin=false;
+let temporaryPreview=false;
+
+function progressFor(profile,year){
+  if(profile?.adventYear!==year || !Array.isArray(profile.adventDoors)) return [];
+  return [...new Set(profile.adventDoors.filter(value=>Number.isInteger(value)&&value>=1&&value<=24))].sort((a,b)=>a-b);
+}
+
+function render(){
+  const date=berlinDate();
+  const year=date.month===12?date.year:date.year;
+  const progress=progressFor(activeProfile,year);
+  const opened=new Set(progress);
+  const preview=activeAdmin&&temporaryPreview;
+  const isDecember=date.month===12;
+  const isCalendarVisible=isDecember||activeAdmin;
+  const nextYear=(date.month===12?date.year+1:date.year);
+  const completion=progress.length===24;
+  const winterOwned=Array.isArray(activeProfile?.ownedThemes)&&activeProfile.ownedThemes.includes("WinterEvent");
+  const goldOwned=Array.isArray(activeProfile?.ownedThemes)&&activeProfile.ownedThemes.includes("WinterGoldEvent");
+
+  let intro;
+  if(!isCalendarVisible){
+    intro='<section class="advent-hero"><div class="advent-kicker">TobiServices · Winterevent</div><h1>🎄 Der Advent kommt!</h1><p>Der Kalender öffnet am 1. Dezember '+nextYear+'. Jeden Tag kannst du genau eine Tür öffnen – nur am zugehörigen Kalendertag.</p></section>'+
+      '<div class="advent-note">Der Kalender ist noch geschlossen. <strong>Admins</strong> können ihn bereits im Admin Center ansehen und die Türen temporär zur Vorschau öffnen.</div>';
+  }else{
+    intro='<section class="advent-hero"><div class="advent-kicker">24 Tage · 24 Türen · ein Winter voller Überraschungen</div><h1>🎄 Dein Adventskalender '+year+'</h1><p>Jede Tür kann nur am dazugehörigen Dezembertag geöffnet werden. Verpasste Tage lassen sich nicht nachholen. Dein Fortschritt wird in deinem TobiServices-Konto gespeichert.</p>'+
+      (activeAdmin?'<div style="margin-top:12px"><span class="advent-preview-tag">ADMIN-ZUGRIFF</span></div>':'')+
+      '<div class="advent-progress"><div><strong>'+progress.length+' / 24</strong><small>geöffnete Türen</small></div><div style="flex:1;min-width:150px"><div class="advent-progress-track"><div class="advent-progress-fill" style="width:'+Math.round(progress.length/24*100)+'%"></div></div><small style="margin-top:5px">'+(completion?'Alle Türen geöffnet!':'Jede Tür zählt genau einmal.')+'</small></div></div></section>';
+  }
+
+  let controls="";
+  if(activeAdmin){
+    controls='<div class="advent-tools"><button class="jd-btn" id="togglePreview">'+(preview?'Vorschau beenden':'Alle Türen temporär öffnen')+'</button><span class="advent-note" style="margin:0;flex:1">Die Vorschau ändert keine Profildaten und vergibt keine Belohnungen.</span></div>';
+  }
+
+  let grid="";
+  if(isCalendarVisible){
+    const cards=doorContent.map((item,index)=>{
+      const day=index+1;
+      const hasOpened=opened.has(day);
+      const canOpen=isDecember&&date.day===day&&!hasOpened&&!preview;
+      const showContents=hasOpened||preview;
+      const status=preview&&!hasOpened?"VORSCHAU":hasOpened?"GEÖFFNET":canOpen?"HEUTE ÖFFNEN":isDecember&&day<date.day?"VERPASST":"NOCH GESCHLOSSEN";
+      const classes=["advent-door"];
+      if(hasOpened)classes.push("opened");
+      if(canOpen)classes.push("today");
+      if(isDecember&&day<date.day&&!hasOpened)classes.push("missed");
+      if(preview&&!hasOpened)classes.push("preview");
+      let action="";
+      if(canOpen){
+        action='<button type="button" data-open-door="'+day+'">Tür öffnen</button>';
+      }else if(preview&&!hasOpened){
+        action='<button type="button" disabled>Nur Vorschau</button>';
+      }else if(hasOpened){
+        action='<span class="door-message">Dein Türchen ist gespeichert ✓</span>';
+      }else if(isDecember&&day<date.day){
+        action='<span class="door-message">Dieser Tag ist vorbei.</span>';
+      }else{
+        action='<span class="door-message">Komm am '+day+'. Dezember wieder.</span>';
+      }
+      return '<article class="'+classes.join(" ")+'">'+
+        '<div class="door-icon">'+item[0]+'</div>'+
+        '<div class="door-number">'+String(day).padStart(2,"0")+'</div>'+
+        '<div class="door-status">'+status+'</div>'+
+        (showContents?'<div class="door-message">'+esc(item[1])+'</div>':"")+
+        action+
+      '</article>';
+    }).join("");
+    grid='<section class="advent-grid" aria-label="24 Adventskalender-Türen">'+cards+'</section>';
+  }
+
+  const rewards='<section class="advent-rewards">'+
+    '<div class="advent-reward"><b>❄️ Winterwunder</b><span>Das bereits vorhandene Theme wird beim Öffnen von Tür 1 freigeschaltet. '+(winterOwned?'In deinem Konto vorhanden.':'Noch nicht freigeschaltet.')+'</span></div>'+
+    '<div class="advent-reward"><b>✨ Winter Gold</b><span>Goldenes Weihnachtstheme als Bonus für alle 24 geöffneten Türen. '+(goldOwned?'In deinem Konto vorhanden.':completion?'Alle Türen geöffnet – der Bonus ist verdient!':'Noch '+(24-progress.length)+' Türen bis zum Bonus.')+'</span></div>'+
+    '</section>';
+
+  const notices=(activeAdmin&&preview?'<div class="advent-note"><strong>Temporäre Vorschau aktiv:</strong> Alle 24 Türinhalte werden nur in deinem Browser angezeigt. Der gespeicherte Zähler bleibt bei '+progress.length+'/24.</div>':"")+
+    (!isDecember&&activeAdmin?'<div class="advent-note">Die echte Öffnung ist außerhalb des jeweiligen Dezembertags gesperrt. Die Admin-Vorschau ist rein visuell.</div>':"")+
+    '<p class="advent-status" id="adventStatus" role="status"></p>';
+
+  app.innerHTML=intro+controls+grid+rewards+notices;
+  const toggle=document.getElementById("togglePreview");
+  if(toggle) toggle.addEventListener("click",()=>{temporaryPreview=!temporaryPreview;render();});
+  app.querySelectorAll("[data-open-door]").forEach(button=>{
+    button.addEventListener("click",async()=>{
+      const day=Number(button.dataset.openDoor);
+      button.disabled=true;
+      const status=document.getElementById("adventStatus");
+      if(status)status.textContent="Tür wird geöffnet …";
+      try{
+        const result=await openAdventDoor(day);
+        activeProfile={
+          ...activeProfile,
+          adventYear:result.adventYear,
+          adventDoors:result.adventDoors,
+          ownedThemes:result.ownedThemes
+        };
+        render();
+        const grants=[];
+        if(result.grantedThemes.includes("WinterEvent"))grants.push("Winterwunder");
+        if(result.grantedThemes.includes("WinterGoldEvent"))grants.push("Winter Gold");
+        const statusAfter=document.getElementById("adventStatus");
+        if(statusAfter){
+          statusAfter.textContent="Tür "+day+" wurde gespeichert."+(grants.length?" Freigeschaltet: "+grants.join(" und ")+".":"");
+        }
+      }catch(error){
+        console.error("Adventstür konnte nicht geöffnet werden:",error);
+        const message=String(error?.message||"Unbekannter Fehler");
+        const code=String(error?.code||"").replace(/^firestore\//,"");
+        const friendly=code==="permission-denied"
+          ?"Firestore hat die Tür abgelehnt. Prüfe, ob die neuen Firestore-Regeln für tobiservices veröffentlicht wurden."
+          :message;
+        const statusAfter=document.getElementById("adventStatus");
+        if(statusAfter)statusAfter.textContent=friendly;
+        button.disabled=false;
+      }
+    });
+  });
+}
+
+onUser((user,profile,error)=>{
+  if(!user){
+    requireLogin(location.href);
+    return;
+  }
+  activeUser=user;
+  if(!profile){
+    app.innerHTML='<section class="jd-card"><h3>Adventskalender konnte nicht geladen werden</h3><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(error?.message||"Das TobiServices-Profil ist noch nicht verfügbar.")+'</p><button class="jd-btn" id="retry">Erneut versuchen</button></section>';
+    document.getElementById("retry").onclick=()=>location.reload();
+    return;
+  }
+  activeProfile=profile;
+  activeAdmin=isAdmin(profile);
+  render();
+});
+</script>
+</body>
+</html>
