@@ -125,8 +125,10 @@ function render(){
   const isCalendarVisible=isDecember||activeAdmin;
   const nextYear=(date.month===12?date.year+1:date.year);
   const completion=progress.length===24;
+  const missedPast=isDecember?Array.from({length:24},(_,index)=>index+1).filter(day=>day<date.day&&!opened.has(day)).length:0;
   const winterOwned=Array.isArray(activeProfile?.ownedThemes)&&activeProfile.ownedThemes.includes("WinterEvent");
   const goldOwned=Array.isArray(activeProfile?.ownedThemes)&&activeProfile.ownedThemes.includes("WinterGoldEvent");
+  const goldStatus=goldOwned?"In deinem Konto vorhanden.":completion?"Alle Türen geöffnet – der Bonus ist verdient!":missedPast>0?missedPast+" Tür(en) wurden verpasst. Winter Gold ist in diesem Kalenderjahr nicht mehr erreichbar.":"Noch "+(24-progress.length)+" Türen müssen an ihren jeweiligen Tagen geöffnet werden.";
 
   let intro;
   if(!isCalendarVisible){
@@ -181,7 +183,7 @@ function render(){
 
   const rewards='<section class="advent-rewards">'+
     '<div class="advent-reward"><b>❄️ Winterwunder</b><span>Das bereits vorhandene Theme wird beim Öffnen von Tür 1 freigeschaltet. '+(winterOwned?'In deinem Konto vorhanden.':'Noch nicht freigeschaltet.')+'</span></div>'+
-    '<div class="advent-reward"><b>✨ Winter Gold</b><span>Goldenes Weihnachtstheme als Bonus für alle 24 geöffneten Türen. '+(goldOwned?'In deinem Konto vorhanden.':completion?'Alle Türen geöffnet – der Bonus ist verdient!':'Noch '+(24-progress.length)+' Türen bis zum Bonus.')+'</span></div>'+
+    '<div class="advent-reward"><b>✨ Winter Gold</b><span>Goldenes Weihnachtstheme als Bonus für alle 24 geöffneten Türen. '+esc(goldStatus)+'</span></div>'+
     '</section>';
 
   const notices=(activeAdmin&&preview?'<div class="advent-note"><strong>Temporäre Vorschau aktiv:</strong> Alle 24 Türinhalte werden nur in deinem Browser angezeigt. Der gespeicherte Zähler bleibt bei '+progress.length+'/24.</div>':"")+
