@@ -323,7 +323,7 @@ export const isAdmin = profile => profile?.disabled !== true && hasTag(profile, 
 
 const USER_SELECTABLE_THEMES = new Set([
   "Next", "Ocean", "Sunset", "Forest", "Candy", "Midnight", "Aurora", "Retro",
-  "RoyalRebels", "Bronze", "Silver", "Gold", "WinterEvent", "BirthdayEvent", "HalloweenEvent"
+  "RoyalRebels", "Bronze", "Silver", "Gold", "WinterEvent", "BirthdayEvent", "HalloweenEvent", "WinterGoldEvent"
 ]);
 
 const JDnextThemePrices = Object.freeze({
