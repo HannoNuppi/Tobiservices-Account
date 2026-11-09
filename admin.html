@@ -49,6 +49,7 @@
   <div class="actions" aria-label="Projekt-Schnellzugriff" style="margin-top:12px">
     <a class="jd-btn-ghost" href="https://hannonuppi.github.io/JDNEXT_UNTIS/" target="_blank" rel="noopener noreferrer">Untis Next ↗</a>
     <a class="jd-btn-ghost" href="https://hannonuppi.github.io/JDNEXT-UI/" target="_blank" rel="noopener noreferrer">JDNEXT ↗</a>
+    <a class="jd-btn-ghost" href="./advent.html">🎄 Adventskalender</a>
   </div>
 
   <section class="jd-card" id="createCard" style="margin-top:16px;display:none">
@@ -141,7 +142,7 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setOwnedEventTheme,getAccessControl,saveAccessControl,ACCESS_RESOURCES,requestLivePublish,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js?v=account-core-stability-20261014c";
+import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setOwnedEventTheme,getAccessControl,saveAccessControl,ACCESS_RESOURCES,requestLivePublish,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js?v=advent-calendar-2026-1";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore,collection,getDocs,doc,getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -153,7 +154,8 @@ let users=[];let selected=new Set();let accessControl=null;
 const EVENT_THEME_OPTIONS=[
   {id:"WinterEvent",name:"Winterwunder"},
   {id:"BirthdayEvent",name:"Birthday Bash"},
-  {id:"HalloweenEvent",name:"Halloween Afterdark"}
+  {id:"HalloweenEvent",name:"Halloween Afterdark"},
+  {id:"WinterGoldEvent",name:"Winter Gold"}
 ];
 
 function escapeHtml(v){
