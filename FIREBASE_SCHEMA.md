@@ -76,8 +76,6 @@ Nach Änderungen an `firestore.rules` müssen die Regeln mit `deploy_tobiservice
 
 ## 8. Deployment-Hinweis
 
-Nach Code-Änderungen:
+Für den Adventskalender müssen nur die Firestore-Regeln veröffentlicht werden; neue Cloud Functions sind dafür nicht erforderlich. Verwende dafür `deploy_tobiservices_rules.bat` oder `firebase deploy --only firestore:rules --project tobiservices`.
 
-`firebase deploy --only functions,firestore`
-
-Firebase kann dabei nachfragen, ob die nicht mehr verwendete Function `bootstrapTobiAdmin` gelöscht werden soll. Bestätige diese Entfernung, damit der alte Bootstrap-Key-Endpunkt nicht als bereits deployte Function weiterläuft.
+Falls du später tatsächlich Cloud Functions änderst, veröffentliche diese separat mit `firebase deploy --only functions --project tobiservices`. Firebase kann dabei nachfragen, ob die nicht mehr verwendete Function `bootstrapTobiAdmin` gelöscht werden soll. Bestätige diese Entfernung, damit der alte Bootstrap-Key-Endpunkt nicht als bereits deployte Function weiterläuft.
