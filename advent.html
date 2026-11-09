@@ -243,6 +243,12 @@ onUser((user,profile,error)=>{
   }
   activeProfile=profile;
   activeAdmin=isAdmin(profile);
+  const date=berlinDate();
+  if(!activeAdmin && date.month!==12){
+    // Keep the calendar completely hidden from regular accounts until December 1 (Berlin time).
+    location.replace("./account.html");
+    return;
+  }
   render();
 });
 </script>
