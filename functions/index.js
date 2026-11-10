@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onInit } = require("firebase-functions/v2/core");
 const { setGlobalOptions } = require("firebase-functions/v2/options");
+const { defineSecret } = require("firebase-functions/params");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
@@ -15,6 +16,9 @@ setGlobalOptions({
 
 const db = getFirestore();
 const adminAuth = getAuth();
+
+// GitHub PAT is stored in Firebase Secret Manager, never in browser code.
+const SWITCH_NRO_GITHUB_TOKEN = defineSecret("SWITCH_NRO_GITHUB_TOKEN");
 
 const USERNAME_RE = /^[a-zA-Z0-9._-]{3,32}$/;
 const PASSWORD_MIN = 8;
@@ -186,8 +190,10 @@ function verifyPassword(password, record) {
 async function isAdminUid(uid) {
   const snap = await db.doc("users/" + uid).get();
   if (!snap.exists) return false;
-  const tags = Array.isArray(snap.data().tags) ? snap.data().tags : [];
-  return tags.includes("admin");
+  const profile = snap.data() || {};
+  if (profile.disabled === true) return false;
+  const tags = Array.isArray(profile.tags) ? profile.tags : [];
+  return tags.some(tag => String(tag).trim().toLowerCase() === "admin");
 }
 
 async function requireAdmin(request) {
@@ -512,3 +518,70 @@ exports.setTobiDisabled = onCall(async (request) => {
 });
 
 
+
+
+// Start a Nintendo Switch NRO build. The repository and workflow are fixed
+// server-side; clients cannot select a different repository, branch, or file.
+exports.requestSwitchNroBuild = onCall({
+  secrets: [SWITCH_NRO_GITHUB_TOKEN]
+}, async (request) => {
+  const adminUid = await requireAdmin(request);
+  const token = SWITCH_NRO_GITHUB_TOKEN.value();
+
+  if (!token) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Das GitHub-Secret SWITCH_NRO_GITHUB_TOKEN ist noch nicht eingerichtet."
+    );
+  }
+
+  const buildRequestId = crypto.randomUUID();
+  const endpoint = "https://api.github.com/repos/HannoNuppi/JDNEXT_UNTIS/actions/workflows/switch-nro.yml/dispatches";
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + token,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        ref: "main",
+        inputs: {
+          build_request_id: buildRequestId,
+          requested_by: adminUid
+        }
+      })
+    });
+  } catch (error) {
+    logger.error("Could not reach GitHub to dispatch Switch NRO build", {
+      adminUid,
+      message: String(error?.message || error)
+    });
+    throw new HttpsError("unavailable", "GitHub konnte momentan nicht erreicht werden.");
+  }
+
+  if (!response.ok) {
+    const responseBody = (await response.text()).slice(0, 1000);
+    logger.error("GitHub rejected Switch NRO workflow dispatch", {
+      adminUid,
+      status: response.status,
+      response: responseBody
+    });
+    throw new HttpsError(
+      "unavailable",
+      "GitHub hat den NRO-Build nicht gestartet (HTTP " + response.status + "). Prüfe das GitHub-Secret und die Actions-Berechtigung."
+    );
+  }
+
+  logger.info("Switch NRO build requested", { adminUid, buildRequestId });
+  return {
+    ok: true,
+    buildRequestId,
+    actionsUrl: "https://github.com/HannoNuppi/JDNEXT_UNTIS/actions/workflows/switch-nro.yml",
+    releaseUrl: "https://github.com/HannoNuppi/JDNEXT_UNTIS/releases/tag/switch-nro"
+  };
+});
