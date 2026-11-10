@@ -111,6 +111,18 @@
     <p class="access-note"><strong>Einmalige GitHub-Einstellung:</strong> Unter <a href="https://github.com/HannoNuppi/JDNEXT_UNTIS/settings/pages" target="_blank" rel="noopener noreferrer">Repository Settings → Pages</a> muss als Build-Quelle <strong>GitHub Actions</strong> ausgewählt sein. Sonst kann GitHubs automatischer Branch-Deploy aus <code>main</code> den Test-/Freigabe-Ablauf umgehen.</p>
   </section>
 
+  <section class="jd-card" id="switchNroBuildCard" style="margin-top:14px;display:none">
+    <h3>Untis Next · Nintendo Switch</h3>
+    <p>Erstellt automatisch eine installierbare <code>.nro</code>-Homebrew für die Switch. Das NRO enthält ein Portal mit Untis Next und dem TobiServices Admin Center. Der Build läuft über GitHub Actions.</p>
+    <div class="actions">
+      <button class="jd-btn" id="buildSwitchNro">📦 Switch-NRO kompilieren</button>
+      <a class="jd-btn-ghost" href="https://github.com/HannoNuppi/JDNEXT_UNTIS/releases/tag/switch-nro" target="_blank" rel="noopener noreferrer">Aktuelle NRO / Release ↗</a>
+      <a class="jd-btn-ghost" href="https://github.com/HannoNuppi/JDNEXT_UNTIS/actions/workflows/switch-nro.yml" target="_blank" rel="noopener noreferrer">Build-Status ↗</a>
+    </div>
+    <p id="switchNroStatus" class="publish-status">Noch kein Build in dieser Sitzung gestartet. Der erste erfolgreiche Build legt den Download-Release an.</p>
+    <p class="access-note">Nur aktive Admin-Konten können den Build starten. Das GitHub-Token bleibt im TobiServices-Backend und wird nicht an den Browser übertragen.</p>
+  </section>
+
   <section class="jd-card" style="margin-top:14px">
     <h3>JDNEXT Wartungsmodus</h3>
     <p>Der Wartungsmodus wird sofort für alle Besucher der JDNEXT-Website übernommen. TobiServices selbst bleibt erreichbar.</p>
@@ -142,7 +154,7 @@
 
 <script src="theme.js"></script>
 <script type="module">
-import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setOwnedEventTheme,getAccessControl,saveAccessControl,ACCESS_RESOURCES,requestLivePublish,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js?v=advent-calendar-2026-2";
+import { auth,db as tobiDb,onUser,isAdmin,listUsers,setTags,setDisabled,setGoldCoins,setOwnedEventTheme,getAccessControl,saveAccessControl,ACCESS_RESOURCES,requestLivePublish,requestSwitchNroBuild,setMaintenanceMode,requireLogin,CONFIG } from "./auth-core.js?v=advent-calendar-2026-2";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore,collection,getDocs,doc,getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -467,6 +479,26 @@ $("#publishLive").onclick=async function(){
     jdToast(backendErrorMessage(error),6000);
   }finally{button.disabled=false;}
 };
+$("#buildSwitchNro").onclick=async function(){
+  const button=this;
+  const status=$("#switchNroStatus");
+  button.disabled=true;
+  button.textContent="⏳ Build wird gestartet …";
+  status.textContent="Prüfe Admin-Berechtigung und starte GitHub Actions …";
+  try{
+    const result=await requestSwitchNroBuild();
+    status.textContent="✅ Build wurde gestartet. Build-ID: "+result.buildRequestId+". Der NRO-Download wird nach erfolgreicher Kompilierung im Release veröffentlicht.";
+    jdToast("Switch-NRO-Build gestartet.");
+  }catch(error){
+    console.error("Switch NRO build dispatch failed:",error);
+    const message=backendErrorMessage(error);
+    status.textContent=message;
+    jdToast(message,7000);
+  }finally{
+    button.disabled=false;
+    button.textContent="📦 Switch-NRO kompilieren";
+  }
+};
 $("#exportCsv").onclick=function(){
   const rows=[["UID","E-Mail","Anzeigename","Tags","Deaktiviert"]].concat(users.map(function(u){return [u.uid,u.email||"",u.displayName||"",Array.isArray(u.tags)?u.tags.join("|"):"",u.disabled?"ja":"nein"];}));
   const csv=rows.map(function(row){return row.map(function(v){return "\""+String(v).replace(/"/g,"\"\"")+"\"";}).join(",");}).join("\r\n");
@@ -527,6 +559,7 @@ onUser(async function(user,profile){
   $("#status").textContent="Admin bestätigt";$("#accountBtn").onclick=function(){location.href=CONFIG.accountUrl;};
   $("#createCard").style.display="block";$("#accountsCard").style.display="block";
   $("#accessCard").style.display="block";$("#testPublishCard").style.display="block";
+  $("#switchNroBuildCard").style.display="block";
   await loadMaintenanceMode();
   await refreshUsers();
   await loadAccessManager();
