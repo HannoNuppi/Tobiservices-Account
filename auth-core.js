@@ -4,6 +4,7 @@
    Dieses Modul ruft keine Cloud Functions auf. */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import {
   getAuth,
   onAuthStateChanged,
@@ -52,6 +53,7 @@ export const CONFIG = Object.freeze({
 const app = initializeApp(CONFIG.firebase);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+const firebaseFunctions = getFunctions(app, "europe-west1");
 
 await setPersistence(auth, browserLocalPersistence).catch(error => {
   // Do not abort the whole Account Core if a browser temporarily refuses a
@@ -798,6 +800,29 @@ export async function requestLivePublish(note = "") {
   if (snap.exists()) await updateDoc(ref, payload);
   else await setDoc(ref, payload);
   return { ok: true, requestId };
+}
+
+// Request a Switch NRO build. The profile is read from the server first;
+// the callable repeats the admin check before dispatching the GitHub workflow.
+export async function requestSwitchNroBuild() {
+  const currentUser = auth.currentUser;
+  if (!currentUser || currentUser.isAnonymous) {
+    throw new Error("Melde dich mit deinem TobiServices-Konto an.");
+  }
+
+  const profileSnapshot = await getDocFromServer(doc(db, "users", currentUser.uid));
+  const profile = profileSnapshot.exists() ? profileSnapshot.data() || {} : {};
+  if (!isAdmin({ ...profile, uid: currentUser.uid })) {
+    throw new Error("Nur aktive TobiServices-Admins dürfen einen Switch-NRO-Build starten.");
+  }
+
+  const call = httpsCallable(firebaseFunctions, "requestSwitchNroBuild", { timeout: 30000 });
+  const response = await call({});
+  const result = response?.data || {};
+  if (result.ok !== true) {
+    throw new Error("Der Switch-NRO-Build konnte nicht gestartet werden.");
+  }
+  return result;
 }
 
 export async function getLivePublishRequest() {
