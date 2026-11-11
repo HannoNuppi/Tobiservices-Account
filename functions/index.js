@@ -520,6 +520,143 @@ exports.setTobiDisabled = onCall(async (request) => {
 
 
 
+// Native Switch client: report a shared homework entry and perform the
+// same two-report removal/coin-penalty flow as Untis Next's web client.
+// All reads of private author metadata happen server-side.
+exports.reportJdnextHomeworkEntryNative = onCall(async (request) => {
+  const reporterUid = request.auth?.uid;
+  if (!reporterUid) {
+    throw new HttpsError("unauthenticated", "Eine Firebase-Sitzung ist erforderlich.");
+  }
+
+  const hwKey = String(request.data?.hwKey ?? "").trim();
+  const entryId = String(request.data?.entryId ?? "").trim();
+  const validSegment = value => /^[A-Za-z0-9_-]{1,120}$/.test(value);
+  if (!validSegment(hwKey) || !validSegment(entryId)) {
+    throw new HttpsError("invalid-argument", "Ungültiger Hausaufgaben-Schlüssel.");
+  }
+
+  const entryRef = db.doc("jdnextHomework/" + hwKey + "/entries/" + entryId);
+  const ownerRef = db.doc("jdnextHomeworkPrivate/" + hwKey + "/entries/" + entryId);
+  const reportRef = entryRef.collection("reports").doc(reporterUid);
+
+  try {
+    return await db.runTransaction(async transaction => {
+      const [entrySnap, ownerSnap, reportSnap] = await Promise.all([
+        transaction.get(entryRef),
+        transaction.get(ownerRef),
+        transaction.get(reportRef)
+      ]);
+
+      if (!entrySnap.exists) {
+        throw new HttpsError("not-found", "Diese Hausaufgabe existiert nicht mehr.");
+      }
+      if (!ownerSnap.exists) {
+        throw new HttpsError("failed-precondition", "Die private Autorzuordnung fehlt.");
+      }
+      if (reportSnap.exists) {
+        throw new HttpsError("already-exists", "Du hast diesen Eintrag bereits gemeldet.");
+      }
+
+      const entry = entrySnap.data() || {};
+      const owner = ownerSnap.data() || {};
+      if (owner.authorAuthUid === reporterUid) {
+        throw new HttpsError("permission-denied", "Eigene Hausaufgaben können nicht gemeldet werden.");
+      }
+
+      const currentCount = Number.isSafeInteger(entry.reportCount) ? entry.reportCount : 0;
+      const nextCount = currentCount + 1;
+      const removeEntry = nextCount >= 2;
+      const authorTobiUid = typeof owner.authorTobiUid === "string"
+        ? owner.authorTobiUid
+        : "";
+
+      // Read the author's profile before any transaction writes. The caller
+      // never receives this private profile or its identity.
+      let authorProfileRef = null;
+      let authorProfile = null;
+      if (removeEntry && authorTobiUid) {
+        authorProfileRef = db.doc("users/" + authorTobiUid);
+        const profileSnap = await transaction.get(authorProfileRef);
+        if (!profileSnap.exists) {
+          throw new HttpsError("failed-precondition", "Das Autorenprofil für die Münzstrafe fehlt.");
+        }
+        authorProfile = profileSnap.data() || {};
+      }
+
+      transaction.create(reportRef, {
+        createdAt: FieldValue.serverTimestamp()
+      });
+
+      if (!removeEntry) {
+        transaction.update(entryRef, { reportCount: nextCount });
+        return {
+          nextCount,
+          removed: false,
+          removalPending: false
+        };
+      }
+
+      // Delete the public entry and its private author map in the same commit.
+      transaction.delete(entryRef);
+      transaction.delete(ownerRef);
+
+      const images = Array.isArray(entry.images) ? entry.images : [];
+      for (const image of images) {
+        if (image?.kind === "firestore" &&
+            typeof image.imageId === "string" &&
+            /^img[0-2]$/.test(image.imageId)) {
+          transaction.delete(entryRef.collection("images").doc(image.imageId));
+        }
+      }
+
+      let penaltyApplied = false;
+      if (authorTobiUid && authorProfileRef && authorProfile) {
+        const coins = Number.isSafeInteger(authorProfile.goldCoins)
+          ? authorProfile.goldCoins
+          : 0;
+        const nextCoins = coins - 20;
+        const eventId = "penalty-" + hwKey + "-" + entryId;
+        const profileUpdate = {
+          goldCoins: nextCoins,
+          lastProfileChangeAt: FieldValue.serverTimestamp(),
+          lastJdnextCoinEventId: eventId
+        };
+        if (nextCoins <= -50) profileUpdate.disabled = true;
+
+        transaction.update(authorProfileRef, profileUpdate);
+        transaction.create(db.doc("jdnextCoinEvents/" + eventId), {
+          uid: authorTobiUid,
+          amount: -20,
+          type: "homework-removal",
+          hwKey,
+          entryId,
+          createdAt: FieldValue.serverTimestamp()
+        });
+        penaltyApplied = true;
+      }
+
+      return {
+        nextCount,
+        removed: true,
+        removalPending: false,
+        penaltyApplied
+      };
+    });
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("Native JDNEXT homework report failed", {
+      reporterUid,
+      hwKey,
+      entryId,
+      message: String(error?.message || error)
+    });
+    throw new HttpsError("unavailable", "Die Meldung konnte momentan nicht verarbeitet werden.");
+  }
+});
+
+
+
 // Start a Nintendo Switch NRO build. The repository and workflow are fixed
 // server-side; clients cannot select a different repository, branch, or file.
 exports.requestSwitchNroBuild = onCall({
